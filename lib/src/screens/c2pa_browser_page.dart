@@ -56,12 +56,14 @@ class C2paBrowserPage extends StatefulWidget {
   const C2paBrowserPage({
     super.key,
     required this.mediaLoader,
-    this.initialPath,
+    this.pendingPaths = const [],
+    this.openGeneration = 0,
     this.onClose,
   });
 
   final C2paMediaLoader mediaLoader;
-  final String? initialPath;
+  final List<String> pendingPaths;
+  final int openGeneration;
   final VoidCallback? onClose;
 
   @override
@@ -75,32 +77,34 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   bool _isParsing = false;
   bool _hasMedia = false;
   int _parseGeneration = 0;
-  String? _lastInspectedPath;
   final List<String> _history = [];
   int _historyIndex = -1;
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _clip = _emptyC2paClip();
     _controller = null;
-    final initialPath = widget.initialPath;
-    if (initialPath != null && initialPath.isNotEmpty) {
+    if (widget.pendingPaths.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_inspectPath(initialPath));
+        unawaited(_openPendingPaths(widget.pendingPaths));
       });
     }
   }
 
   @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(C2paBrowserPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final path = widget.initialPath;
-    if (path != null &&
-        path.isNotEmpty &&
-        path != oldWidget.initialPath &&
-        path != _lastInspectedPath) {
-      unawaited(_inspectPath(path));
+    if (widget.openGeneration != oldWidget.openGeneration &&
+        widget.pendingPaths.isNotEmpty) {
+      unawaited(_openPendingPaths(widget.pendingPaths));
     }
   }
 
@@ -134,13 +138,20 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
       _showErrorToast('No supported media file was dropped.');
       return;
     }
-    // Truncate forward history and append all dropped files.
+    await _openPendingPaths(paths);
+  }
+
+  // Open a batch of paths (from Finder 'Open With' or drag-and-drop).
+  // Appends all valid paths to history and navigates to the first.
+  Future<void> _openPendingPaths(List<String> paths) async {
+    final valid = paths.where(_isSupportedMediaPath).toList();
+    if (valid.isEmpty) return;
     if (_historyIndex < _history.length - 1) {
       _history.removeRange(_historyIndex + 1, _history.length);
     }
-    _history.addAll(paths);
-    _historyIndex = _history.length - paths.length;
-    await _inspectPath(paths.first, addToHistory: false);
+    _history.addAll(valid);
+    _historyIndex = _history.length - valid.length;
+    await _inspectPath(valid.first, addToHistory: false);
   }
 
   Future<void> _pickMedia() async {
@@ -198,7 +209,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
       return;
     }
     if (addToHistory) _pushPath(path);
-    _lastInspectedPath = path;
     final generation = ++_parseGeneration;
     setState(() => _isParsing = true);
     try {
@@ -217,10 +227,29 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
     }
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft && _canGoPrev) {
+      unawaited(_navigatePrev());
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight && _canGoNext) {
+      unawaited(_navigateNext());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final report = _clip.aiMetadata.c2paReport;
-    return Scaffold(
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Scaffold(
       key: const ValueKey<String>('c2pa-page-content'),
       backgroundColor: _c2paPageBackground,
       body: SafeArea(
@@ -244,47 +273,56 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       canGoPrev: _canGoPrev,
                       canGoNext: _canGoNext,
                     ),
-                    if (report != null)
+                    // Tab bar: always shown when media loaded;
+                    // disabled (dimmed, non-interactive) when no C2PA report.
+                    if (_hasMedia)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-                        child: Material(
-                          color: _c2paPanelBackground,
-                          borderRadius: BorderRadius.circular(14),
-                          clipBehavior: Clip.antiAlias,
-                          child: const SizedBox(
-                            height: 44,
-                            child: TabBar(
-                              dividerColor: Colors.transparent,
-                              indicator: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.all(
-                                  Radius.circular(10),
+                        child: IgnorePointer(
+                          ignoring: report == null,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: report == null ? 0.35 : 1.0,
+                            child: Material(
+                              color: _c2paPanelBackground,
+                              borderRadius: BorderRadius.circular(14),
+                              clipBehavior: Clip.antiAlias,
+                              child: const SizedBox(
+                                height: 44,
+                                child: TabBar(
+                                  dividerColor: Colors.transparent,
+                                  indicator: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(10),
+                                    ),
+                                  ),
+                                  indicatorPadding: EdgeInsets.all(4),
+                                  indicatorSize: TabBarIndicatorSize.tab,
+                                  splashBorderRadius: BorderRadius.all(
+                                    Radius.circular(10),
+                                  ),
+                                  labelColor: Color(0xFF171A21),
+                                  unselectedLabelColor: _c2paMutedText,
+                                  labelStyle: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  tabs: <Widget>[
+                                    _C2paTab(
+                                      icon: Icons.badge_outlined,
+                                      label: 'Overview',
+                                    ),
+                                    _C2paTab(
+                                      icon: Icons.account_tree_outlined,
+                                      label: 'History',
+                                    ),
+                                    _C2paTab(
+                                      icon: Icons.fact_check_outlined,
+                                      label: 'Checks & JSON',
+                                    ),
+                                  ],
                                 ),
                               ),
-                              indicatorPadding: EdgeInsets.all(4),
-                              indicatorSize: TabBarIndicatorSize.tab,
-                              splashBorderRadius: BorderRadius.all(
-                                Radius.circular(10),
-                              ),
-                              labelColor: Color(0xFF171A21),
-                              unselectedLabelColor: _c2paMutedText,
-                              labelStyle: TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                              tabs: <Widget>[
-                                _C2paTab(
-                                  icon: Icons.badge_outlined,
-                                  label: 'Overview',
-                                ),
-                                _C2paTab(
-                                  icon: Icons.account_tree_outlined,
-                                  label: 'History',
-                                ),
-                                _C2paTab(
-                                  icon: Icons.fact_check_outlined,
-                                  label: 'Checks & JSON',
-                                ),
-                              ],
                             ),
                           ),
                         ),
@@ -359,6 +397,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -558,118 +597,73 @@ class _C2paAwaitingMediaView extends StatelessWidget {
   }
 }
 
-class _C2paNoCredentialsView extends StatefulWidget {
+class _C2paNoCredentialsView extends StatelessWidget {
   const _C2paNoCredentialsView({required this.clip});
 
   final VideoClipInfo clip;
 
   @override
-  State<_C2paNoCredentialsView> createState() => _C2paNoCredentialsViewState();
-}
-
-class _C2paNoCredentialsViewState extends State<_C2paNoCredentialsView> {
-  Future<Uint8List?>? _thumbnailFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    if (!widget.clip.isPhoto) {
-      _thumbnailFuture = MediaInspectionService.thumbnail(widget.clip.path);
-    }
-  }
-
-  @override
-  void didUpdateWidget(_C2paNoCredentialsView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.clip.path != widget.clip.path) {
-      setState(() {
-        _thumbnailFuture = widget.clip.isPhoto
-            ? null
-            : MediaInspectionService.thumbnail(widget.clip.path);
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final clip = widget.clip;
-
-    Widget? thumbnailWidget;
-    if (clip.isPhoto) {
-      thumbnailWidget = _buildThumbnailContainer(
-        child: Image.file(
-          File(clip.path),
-          fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
-      );
-    } else if (_thumbnailFuture != null) {
-      thumbnailWidget = FutureBuilder<Uint8List?>(
-        future: _thumbnailFuture,
-        builder: (context, snapshot) {
-          final data = snapshot.data;
-          if (data == null) return const SizedBox.shrink();
-          return _buildThumbnailContainer(
-            child: Image.memory(data, fit: BoxFit.contain),
-          );
-        },
-      );
-    }
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: <Widget>[
+        SizedBox(
+          height: 206,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              ?thumbnailWidget,
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  const Icon(
-                    Icons.gpp_maybe_outlined,
-                    size: 28,
-                    color: _c2paMutedText,
+              AspectRatio(
+                aspectRatio: 1.0,
+                child: _C2paPreviewCard(
+                  key: const ValueKey<String>('c2pa-no-cred-preview'),
+                  clip: clip,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: _c2paCardBorder),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'No Content Credentials',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.gpp_maybe_outlined,
+                            size: 19,
+                            color: _c2paMutedText,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'No Content Credentials',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${p.basename(clip.path)} does not contain C2PA data.',
+                        style: const TextStyle(
+                          color: _c2paMutedText,
+                          fontSize: 13,
                         ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '${p.basename(clip.path)} does not contain C2PA data.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: _c2paMutedText),
-              ),
-              const SizedBox(height: 22),
-              const _C2paDropPrompt(),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildThumbnailContainer({required Widget child}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 240,
-          height: 135,
-          color: const Color(0xFF171A21),
-          child: child,
-        ),
-      ),
+        const SizedBox(height: 24),
+        const Center(child: _C2paDropPrompt()),
+      ],
     );
   }
 }

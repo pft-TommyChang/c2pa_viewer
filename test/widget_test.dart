@@ -11,7 +11,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: C2paBrowserPage(
-          initialPath: '/tmp/source.png',
+          pendingPaths: const ['/tmp/source.png'],
           mediaLoader: (path) async {
             inspectedPaths.add(path);
             return VideoClipInfo(

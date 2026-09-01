@@ -56,13 +56,15 @@ class _ViewerHomeState extends State<_ViewerHome> {
 
   final MediaInspectionService _inspectionService =
       const MediaInspectionService();
-  String? _path;
+  List<String> _pendingPaths = [];
   int _openGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    _path = widget.initialPath;
+    _pendingPaths = (widget.initialPath?.isNotEmpty ?? false)
+        ? [widget.initialPath!]
+        : [];
     _mediaOpenChannel.setMethodCallHandler(_handleMediaOpenMethodCall);
     unawaited(_consumePendingMediaFiles());
     unawaited(_inspectionService.aiMetadataService.refreshTrustListIfNeeded());
@@ -88,10 +90,10 @@ class _ViewerHomeState extends State<_ViewerHome> {
       final paths = await _mediaOpenChannel.invokeListMethod<String>(
         'consumePendingMediaFiles',
       );
-      final path = paths?.firstOrNull;
-      if (mounted && path != null && path.isNotEmpty) {
+      final valid = paths?.where((p) => p.isNotEmpty).toList() ?? [];
+      if (mounted && valid.isNotEmpty) {
         setState(() {
-          _path = path;
+          _pendingPaths = valid;
           _openGeneration++;
         });
       }
@@ -103,8 +105,9 @@ class _ViewerHomeState extends State<_ViewerHome> {
   @override
   Widget build(BuildContext context) {
     return C2paBrowserPage(
-      key: ValueKey<String>('${_path ?? ''}:$_openGeneration'),
-      initialPath: _path,
+      key: const Key('c2pa-browser'),
+      pendingPaths: _pendingPaths,
+      openGeneration: _openGeneration,
       mediaLoader: _inspectionService.inspect,
       onClose: () => exit(0),
     );
