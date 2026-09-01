@@ -100,6 +100,69 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('fit mode updates when the history viewport is resized', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final sourcePath = File('assets/app_icon_1024.png').absolute.path;
+    const report = C2paReport(
+      activeManifestLabel: 'active',
+      manifests: <C2paManifest>[
+        C2paManifest(label: 'active', title: 'source.png'),
+      ],
+      validationEntries: <C2paValidationEntry>[],
+      rawJson: '{}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: C2paBrowserPage(
+          pendingPaths: <String>[sourcePath],
+          checkForUpdatesOnLaunch: false,
+          mediaLoader: (path) async => VideoClipInfo(
+            path: path,
+            name: 'source.png',
+            duration: Duration.zero,
+            width: 100,
+            height: 100,
+            hasAudio: false,
+            mediaKind: MediaKind.photo,
+            aiMetadata: const AiMediaMetadata(
+              c2paStatus: C2paStatus.conformant,
+              c2paReport: report,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('History'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    InteractiveViewer historyViewer() => tester.widget<InteractiveViewer>(
+      find.byKey(const ValueKey<String>('c2pa-history-viewer')),
+    );
+    final initialScale = historyViewer()
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    tester.view.physicalSize = const Size(1200, 900);
+    await tester.pump();
+    await tester.pump();
+    final resizedScale = historyViewer()
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    expect(resizedScale, greaterThan(initialScale));
+  });
   _updateTests();
 }
 

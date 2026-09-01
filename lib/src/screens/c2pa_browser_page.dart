@@ -1355,6 +1355,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
   _ZoomMode _zoomMode = _ZoomMode.fit;
   Size _viewportSize = Size.zero;
   Size _treeSize = Size.zero;
+  bool _fitScheduled = false;
 
   static const double _minScale = 0.15;
   static const double _maxScale = 3.0;
@@ -1395,6 +1396,15 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
       case _ZoomMode.free:
         break;
     }
+  }
+
+  void _scheduleFitToView() {
+    if (_fitScheduled) return;
+    _fitScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fitScheduled = false;
+      if (mounted && _zoomMode == _ZoomMode.fit) _fitToView();
+    });
   }
 
   void _setMode(_ZoomMode mode) {
@@ -1552,15 +1562,23 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                 borderRadius: BorderRadius.circular(17),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    _viewportSize = constraints.biggest;
+                    final viewportSize = constraints.biggest;
                     final treeWidth = math.max(
                       constraints.maxWidth,
                       widestLevel * 264.0,
                     );
-                    _treeSize = Size(treeWidth, treeHeight);
+                    final treeSize = Size(treeWidth, treeHeight);
+                    final layoutChanged = _viewportSize != viewportSize ||
+                        _treeSize != treeSize;
+                    _viewportSize = viewportSize;
+                    _treeSize = treeSize;
+                    if (_zoomMode == _ZoomMode.fit && layoutChanged) {
+                      _scheduleFitToView();
+                    }
                     return Stack(
                       children: <Widget>[
                         InteractiveViewer(
+                          key: const ValueKey<String>('c2pa-history-viewer'),
                           transformationController: _transformationController,
                           boundaryMargin: const EdgeInsets.all(double.infinity),
                           minScale: _minScale,
