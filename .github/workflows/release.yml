@@ -2,11 +2,12 @@ name: Release macOS build
 
 on:
   release:
-    types: [published]
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag, for example v1.0.0
+        description: Existing git tag to build and upload assets for, for example v1.0.0
         required: true
         type: string
 
@@ -14,7 +15,63 @@ permissions:
   contents: write
 
 jobs:
-  build-macos:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release_meta.outputs.tag }}
+      version: ${{ steps.release_meta.outputs.version }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Resolve release tag
+        id: release_meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            tag="${{ github.event.release.tag_name }}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            echo "Release tag is required." >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.release_meta.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate pubspec version
+        shell: bash
+        run: |
+          pubspec_version="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          release_version="${{ steps.release_meta.outputs.version }}"
+          if [[ "$pubspec_version" != "$release_version" ]]; then
+            echo "Tag version ($release_version) does not match pubspec.yaml ($pubspec_version)." >&2
+            exit 1
+          fi
+
+      - name: Ensure GitHub Release exists
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          tag="${{ steps.release_meta.outputs.tag }}"
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "GitHub Release $tag already exists."
+          else
+            gh release create "$tag" --repo "$GH_REPO" --verify-tag --generate-notes
+          fi
+
+  build-macos-release:
+    needs: prepare-release
     runs-on: macos-latest
     env:
       FLUTTER_VERSION: 3.38.10
@@ -23,41 +80,23 @@ jobs:
       PACKAGE_ARCH: arm64
 
     steps:
-      - name: Resolve release tag
-        id: release
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            tag="${{ github.event.release.tag_name }}"
-          else
-            tag="${{ inputs.tag }}"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-
       - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ steps.release.outputs.tag }}
+          ref: refs/tags/${{ needs.prepare-release.outputs.tag }}
           fetch-depth: 0
-
-      - name: Validate pubspec version
-        shell: bash
-        run: |
-          pubspec_version="$(awk '/^version:/ {print $2}' pubspec.yaml | cut -d+ -f1)"
-          if [[ "$pubspec_version" != "${{ steps.release.outputs.version }}" ]]; then
-            echo "Tag and pubspec versions do not match." >&2
-            exit 1
-          fi
 
       - name: Install Flutter SDK
         shell: bash
         run: |
-          git clone https://github.com/flutter/flutter.git \
-            --depth 1 \
-            --branch "$FLUTTER_VERSION" \
-            "$HOME/flutter"
-          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          git clone https://github.com/flutter/flutter.git --depth 1 --branch "${FLUTTER_VERSION}" "${HOME}/flutter"
+          echo "${HOME}/flutter/bin" >> "${GITHUB_PATH}"
+          "${HOME}/flutter/bin/flutter" --disable-analytics --version
+
+      - name: Enable and precache macOS desktop
+        run: |
+          flutter config --enable-macos-desktop
+          flutter precache --macos
 
       - name: Build release artifacts
         run: ./scripts/build_release_artifacts.sh
@@ -65,7 +104,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PerfectC2PA-${{ steps.release.outputs.version }}-macos-arm64
+          name: macos-release-${{ needs.prepare-release.outputs.version }}-arm64
           path: |
             dist/*.dmg
             dist/*.sha256
@@ -74,8 +113,4 @@ jobs:
       - name: Upload assets to GitHub Release
         shell: bash
         run: |
-          gh release upload "${{ steps.release.outputs.tag }}" \
-            --repo "$GH_REPO" \
-            dist/*.dmg \
-            dist/*.sha256 \
-            --clobber
+          gh release upload "${{ needs.prepare-release.outputs.tag }}" --repo "$GH_REPO" dist/*.dmg dist/*.sha256 --clobber
