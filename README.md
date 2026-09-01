@@ -1,12 +1,13 @@
 # Perfect C2PA
 
-Perfect C2PA is a focused macOS viewer for inspecting C2PA Content
+Perfect C2PA is a focused macOS and Windows viewer for inspecting C2PA Content
 Credentials. It shows credential status, signer and manifest information,
 provenance history, validation checks, and raw manifest JSON.
 
 ## Features
 
-- Open supported photos and videos from Finder or by dragging them into the app.
+- Open supported photos and videos from the system file picker or by dragging
+  them into the app.
 - Distinguish trusted, legacy-trusted, unverified, invalid, and unsigned media.
 - Browse manifest ingredients and provenance history.
 - Inspect validation results and copy the complete C2PA JSON.
@@ -19,6 +20,12 @@ Start the viewer and drag a media file into it:
 
 ```bash
 flutter run -d macos
+```
+
+On Windows, use:
+
+```powershell
+flutter run -d windows
 ```
 
 Or pass a development file path directly when sandbox access permits it:
@@ -48,6 +55,15 @@ flutter test
 ```
 
 The generated DMG and SHA-256 file are written to `dist/`.
+
+Create the Windows x64 ZIP bundle from a Windows development machine:
+
+```powershell
+.\scripts\build_windows_release.ps1
+```
+
+The script embeds `c2patool.exe` and the C2PA trust lists, then writes the ZIP
+bundle and SHA-256 file to `dist/`.
 
 ## Perfect Collage integration
 

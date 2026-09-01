@@ -1,4 +1,4 @@
-name: Release macOS build
+name: Release desktop builds
 
 on:
   release:
@@ -114,3 +114,48 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ needs.prepare-release.outputs.tag }}" --repo "$GH_REPO" dist/*.dmg dist/*.sha256 --clobber
+
+  build-windows-release:
+    needs: prepare-release
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.prepare-release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Install Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.10
+          channel: stable
+          cache: true
+
+      - name: Enable and precache Windows desktop
+        shell: pwsh
+        run: |
+          flutter config --enable-windows-desktop
+          flutter precache --windows
+
+      - name: Build release artifacts
+        shell: pwsh
+        run: ./scripts/build_windows_release.ps1
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-${{ needs.prepare-release.outputs.version }}-x64
+          path: |
+            dist/*-windows-x64.zip
+            dist/*-windows-x64.sha256
+          if-no-files-found: error
+
+      - name: Upload assets to GitHub Release
+        shell: pwsh
+        run: |
+          gh release upload "${{ needs.prepare-release.outputs.tag }}" --repo "$env:GH_REPO" (Get-ChildItem dist/*-windows-x64.zip) (Get-ChildItem dist/*-windows-x64.sha256) --clobber

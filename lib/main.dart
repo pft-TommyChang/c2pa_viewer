@@ -98,7 +98,7 @@ class _ViewerHomeState extends State<_ViewerHome> {
         });
       }
     } on MissingPluginException {
-      // Tests and non-macOS runners do not install the native channel.
+      // Tests and runners without the native channel can still use drag/drop.
     }
   }
 

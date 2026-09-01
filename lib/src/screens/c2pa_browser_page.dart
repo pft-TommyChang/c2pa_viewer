@@ -54,6 +54,14 @@ VideoClipInfo _emptyC2paClip() => const VideoClipInfo(
 
 typedef C2paMediaLoader = Future<VideoClipInfo> Function(String path);
 
+Future<void> _revealMediaFile(String path) async {
+  if (Platform.isWindows) {
+    await Process.run('explorer.exe', <String>['/select,', path]);
+    return;
+  }
+  await Process.run('open', <String>['-R', path]);
+}
+
 class C2paBrowserPage extends StatefulWidget {
   const C2paBrowserPage({
     super.key,
@@ -592,9 +600,11 @@ class _C2paPageHeader extends StatelessWidget {
                   Row(
                     children: <Widget>[
                       Tooltip(
-                        message: 'Reveal in Finder',
+                        message: Platform.isWindows
+                            ? 'Show in File Explorer'
+                            : 'Reveal in Finder',
                         child: GestureDetector(
-                          onTap: () => Process.run('open', <String>['-R', clip!.path]),
+                          onTap: () => unawaited(_revealMediaFile(clip!.path)),
                           child: Icon(
                             Icons.folder_outlined,
                             size: 14,
