@@ -5,11 +5,13 @@ import 'dart:math' as math;
 import 'package:desktop_drop/desktop_drop.dart';
 import '../services/media_inspection_service.dart' show MediaInspectionService;
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import '../services/github_update_service.dart';
 
 import '../models.dart';
 
@@ -59,12 +61,19 @@ class C2paBrowserPage extends StatefulWidget {
     this.pendingPaths = const [],
     this.openGeneration = 0,
     this.onClose,
+    this.checkForUpdatesOnLaunch = true,
+    this.updateService = const GitHubUpdateService(
+      owner: 'pft-TommyChang',
+      repository: 'c2pa_viewer',
+    ),
   });
 
   final C2paMediaLoader mediaLoader;
   final List<String> pendingPaths;
   final int openGeneration;
   final VoidCallback? onClose;
+  final bool checkForUpdatesOnLaunch;
+  final GitHubUpdateService updateService;
 
   @override
   State<C2paBrowserPage> createState() => _C2paBrowserPageState();
@@ -81,6 +90,11 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   int _historyIndex = -1;
   final FocusNode _focusNode = FocusNode();
 
+  // Update check
+  GitHubRelease? _availableUpdate;
+  String _versionLabel = '';
+  bool _isCheckingForUpdates = false;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +105,51 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
         unawaited(_openPendingPaths(widget.pendingPaths));
       });
     }
+    unawaited(_loadAppVersion());
+    if (widget.checkForUpdatesOnLaunch) {
+      unawaited(_checkForUpdatesInBackground());
+    }
+  }
+
+  Future<void> _loadAppVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _versionLabel = 'v${info.version} (${info.buildNumber})');
+    }
+  }
+
+  Future<void> _checkForUpdatesInBackground() async {
+    if (_isCheckingForUpdates) return;
+    _isCheckingForUpdates = true;
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final release = await widget.updateService.fetchLatestRelease();
+      if (!mounted) return;
+      final hasUpdate = GitHubUpdateService.isNewerVersion(
+        currentVersion: packageInfo.version,
+        releaseTag: release.tagName,
+      );
+      if (hasUpdate) {
+        setState(() => _availableUpdate = release);
+      }
+    } catch (error) {
+      debugPrint('Background update check failed: \$error');
+    } finally {
+      _isCheckingForUpdates = false;
+    }
+  }
+
+  Future<void> _openReleasePage() async {
+    final pageUrl = Uri.https(
+      'github.com',
+      '/\${widget.updateService.owner}/\${widget.updateService.repository}/releases',
+    );
+    try {
+      final didLaunch = await launchUrl(pageUrl, mode: LaunchMode.externalApplication);
+      if (!didLaunch && mounted) {
+        debugPrint('Unable to open the GitHub Release page.');
+      }
+    } catch (_) {}
   }
 
   @override
@@ -272,6 +331,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       onNext: () => unawaited(_navigateNext()),
                       canGoPrev: _canGoPrev,
                       canGoNext: _canGoNext,
+                      versionLabel: _versionLabel,
+                      availableUpdate: _availableUpdate,
+                      onUpdateTap: () => unawaited(_openReleasePage()),
                     ),
                     // Tab bar: always shown when media loaded;
                     // disabled (dimmed, non-interactive) when no C2PA report.
@@ -341,7 +403,11 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                               ],
                             )
                           : !_hasMedia
-                          ? const _C2paAwaitingMediaView()
+                          ? AnimatedOpacity(
+                              duration: const Duration(milliseconds: 140),
+                              opacity: _isDragging ? 0 : 1,
+                              child: const _C2paAwaitingMediaView(),
+                            )
                           : _clip.aiMetadata.c2paStatus == C2paStatus.absent
                           ? _C2paNoCredentialsView(clip: _clip)
                           : _C2paUnavailableView(clip: _clip),
@@ -432,6 +498,9 @@ class _C2paPageHeader extends StatelessWidget {
     required this.onNext,
     required this.canGoPrev,
     required this.canGoNext,
+    this.versionLabel = '',
+    this.availableUpdate,
+    this.onUpdateTap,
   });
 
   final VideoClipInfo? clip;
@@ -441,6 +510,9 @@ class _C2paPageHeader extends StatelessWidget {
   final VoidCallback onNext;
   final bool canGoPrev;
   final bool canGoNext;
+  final String versionLabel;
+  final GitHubRelease? availableUpdate;
+  final VoidCallback? onUpdateTap;
 
   @override
   Widget build(BuildContext context) {
@@ -449,17 +521,13 @@ class _C2paPageHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 10, 11),
       child: Row(
         children: <Widget>[
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFE7DF),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.verified_user_outlined,
-              color: _c2paAccentDark,
-              size: 20,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'assets/app_icon_1024.png',
+              width: 34,
+              height: 34,
+              fit: BoxFit.cover,
             ),
           ),
           const SizedBox(width: 12),
@@ -467,11 +535,49 @@ class _C2paPageHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  'Content Credentials',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: <Widget>[
+                    Text(
+                      'Content Credentials',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (versionLabel.isNotEmpty) ...<Widget>[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: availableUpdate != null
+                            ? 'Version \${availableUpdate!.version} available — click to open'
+                            : 'Open GitHub Releases',
+                        child: InkWell(
+                          key: const ValueKey<String>('open-release-page'),
+                          onTap: onUpdateTap,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(
+                                versionLabel,
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: _c2paMutedText, fontSize: 10, height: 1),
+                              ),
+                              if (availableUpdate != null) ...<Widget>[
+                                const SizedBox(width: 3),
+                                const Icon(
+                                  Icons.error_rounded,
+                                  key: ValueKey<String>('update-available-indicator'),
+                                  size: 12,
+                                  color: Color(0xFFE0523D),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 if (clip == null)
                   Text(
@@ -1164,17 +1270,19 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
   void _zoomTo(double newScale) {
     final clamped = newScale.clamp(_minScale, _maxScale);
     if (_viewportSize == Size.zero) {
-      _transformationController.value = Matrix4.identity()..scale(clamped);
+      _transformationController.value = Matrix4.identity()..scaleByDouble(clamped, clamped, clamped, 1.0);
       return;
     }
     final focal = Offset(_viewportSize.width / 2, _viewportSize.height / 2);
     final inScene = _transformationController.toScene(focal);
     _transformationController.value = Matrix4.identity()
-      ..translate(
+      ..translateByDouble(
         focal.dx - inScene.dx * clamped,
         focal.dy - inScene.dy * clamped,
+        0.0,
+        1.0,
       )
-      ..scale(clamped);
+      ..scaleByDouble(clamped, clamped, clamped, 1.0);
   }
 
   void _zoomIn() {
@@ -1201,8 +1309,8 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
     final tx = (_viewportSize.width - contentW * fitScale) / 2;
     final ty = (_viewportSize.height - contentH * fitScale) / 2;
     _transformationController.value = Matrix4.identity()
-      ..translate(tx, ty)
-      ..scale(fitScale);
+      ..translateByDouble(tx, ty, 0.0, 1.0)
+      ..scaleByDouble(fitScale, fitScale, fitScale, 1.0);
   }
 
   Widget _buildZoomControls() {
