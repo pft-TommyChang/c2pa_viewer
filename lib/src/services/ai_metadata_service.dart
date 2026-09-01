@@ -62,7 +62,10 @@ class AiMetadataService {
         resourceDirectory,
         ...plan.officialArguments,
       ]);
-      if (result.exitCode != 0) {
+      final manifestStoreFile = File(
+        p.join(resourceDirectory, 'manifest_store.json'),
+      );
+      if (!await manifestStoreFile.exists()) {
         _discardTemporaryResources(temporaryRoot.path);
         final message = '${result.stdout}\n${result.stderr}'.toLowerCase();
         return AiMediaMetadata(
@@ -71,9 +74,6 @@ class AiMetadataService {
               : C2paStatus.invalid,
         );
       }
-      final manifestStoreFile = File(
-        p.join(resourceDirectory, 'manifest_store.json'),
-      );
       final source = await manifestStoreFile.readAsString();
       final official = parseC2paJson(
         source,

@@ -8,13 +8,13 @@ class AppDelegate: FlutterAppDelegate {
   private let mediaProbeChannelName = "c2pa_viewer/media_probe"
   private var mediaOpenChannel: FlutterMethodChannel?
   private var pendingOpenFilePaths: [String] = []
+  private var securityScopedMediaURLs: [String: [URL]] = [:]
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
     guard
       let flutterViewController = mainFlutterWindow?.contentViewController
         as? FlutterViewController
     else {
-      super.applicationDidFinishLaunching(notification)
       return
     }
 
@@ -38,10 +38,6 @@ class AppDelegate: FlutterAppDelegate {
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
     probeChannel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "probeMedia" else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
       guard
         let arguments = call.arguments as? [String: Any],
         let path = arguments["path"] as? String
@@ -55,10 +51,19 @@ class AppDelegate: FlutterAppDelegate {
         )
         return
       }
-      self?.probeMedia(path: path, result: result)
+      switch call.method {
+      case "beginAccessingMedia":
+        result(self?.beginAccessingMedia(path: path) ?? false)
+      case "endAccessingMedia":
+        self?.endAccessingMedia(path: path)
+        result(nil)
+      case "probeMedia":
+        self?.probeMedia(path: path, result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
     }
 
-    super.applicationDidFinishLaunching(notification)
   }
 
   override func application(_ sender: NSApplication, openFiles filenames: [String]) {
@@ -100,11 +105,6 @@ class AppDelegate: FlutterAppDelegate {
 
   private func probeMedia(path: String, result: @escaping FlutterResult) {
     let url = URL(fileURLWithPath: path)
-    let accessed = url.startAccessingSecurityScopedResource()
-    defer {
-      if accessed { url.stopAccessingSecurityScopedResource() }
-    }
-
     let photoExtensions: Set<String> = [
       "jpg", "jpeg", "png", "webp", "heic", "heif",
     ]
@@ -142,6 +142,24 @@ class AppDelegate: FlutterAppDelegate {
       "hasAudio": !asset.tracks(withMediaType: .audio).isEmpty,
       "isPhoto": false,
     ])
+  }
+
+  private func beginAccessingMedia(path: String) -> Bool {
+    let url = URL(fileURLWithPath: path)
+    guard url.startAccessingSecurityScopedResource() else { return false }
+    securityScopedMediaURLs[path, default: []].append(url)
+    return true
+  }
+
+  private func endAccessingMedia(path: String) {
+    guard var urls = securityScopedMediaURLs[path], let url = urls.popLast()
+    else { return }
+    url.stopAccessingSecurityScopedResource()
+    if urls.isEmpty {
+      securityScopedMediaURLs.removeValue(forKey: path)
+    } else {
+      securityScopedMediaURLs[path] = urls
+    }
   }
 
   private func probeError(code: String, path: String) -> FlutterError {

@@ -16,32 +16,48 @@ class MediaInspectionService {
   final AiMetadataService aiMetadataService;
 
   Future<VideoClipInfo> inspect(String path) async {
-    final results = await Future.wait<Object?>(<Future<Object?>>[
-      _mediaProbeChannel.invokeMapMethod<String, Object?>(
-        'probeMedia',
-        <String, Object?>{'path': path},
-      ),
-      aiMetadataService.probe(path),
-    ]);
-    final media = results[0] as Map<String, Object?>?;
-    if (media == null) {
-      throw PlatformException(
-        code: 'probe-failed',
-        message: 'The media file could not be inspected.',
+    var hasSecurityScopedAccess = false;
+    try {
+      hasSecurityScopedAccess =
+          await _mediaProbeChannel.invokeMethod<bool>(
+            'beginAccessingMedia',
+            <String, Object?>{'path': path},
+          ) ??
+          false;
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        _mediaProbeChannel.invokeMapMethod<String, Object?>(
+          'probeMedia',
+          <String, Object?>{'path': path},
+        ),
+        aiMetadataService.probe(path),
+      ]);
+      final media = results[0] as Map<String, Object?>?;
+      if (media == null) {
+        throw PlatformException(
+          code: 'probe-failed',
+          message: 'The media file could not be inspected.',
+        );
+      }
+      return VideoClipInfo(
+        path: path,
+        name: p.basename(path),
+        duration: Duration(
+          milliseconds: (((media['durationSeconds'] as num?) ?? 0) * 1000)
+              .round(),
+        ),
+        width: (media['width'] as num?)?.round() ?? 0,
+        height: (media['height'] as num?)?.round() ?? 0,
+        hasAudio: media['hasAudio'] == true,
+        mediaKind: media['isPhoto'] == true ? MediaKind.photo : MediaKind.video,
+        aiMetadata: results[1] as AiMediaMetadata,
       );
+    } finally {
+      if (hasSecurityScopedAccess) {
+        await _mediaProbeChannel.invokeMethod<void>(
+          'endAccessingMedia',
+          <String, Object?>{'path': path},
+        );
+      }
     }
-    return VideoClipInfo(
-      path: path,
-      name: p.basename(path),
-      duration: Duration(
-        milliseconds: (((media['durationSeconds'] as num?) ?? 0) * 1000)
-            .round(),
-      ),
-      width: (media['width'] as num?)?.round() ?? 0,
-      height: (media['height'] as num?)?.round() ?? 0,
-      hasAudio: media['hasAudio'] == true,
-      mediaKind: media['isPhoto'] == true ? MediaKind.photo : MediaKind.video,
-      aiMetadata: results[1] as AiMediaMetadata,
-    );
   }
 }
