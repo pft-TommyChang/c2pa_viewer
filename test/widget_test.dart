@@ -1,18 +1,40 @@
+import 'dart:io';
+
 import 'package:c2pa_viewer/src/models.dart';
 import 'package:c2pa_viewer/src/services/github_update_service.dart';
 import 'package:c2pa_viewer/src/screens/c2pa_browser_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 void main() {
+  setUpAll(() {
+    PackageInfo.setMockInitialValues(
+      appName: 'Perfect C2PA',
+      packageName: 'c2pa_viewer',
+      version: '1.0.2',
+      buildNumber: '102',
+      buildSignature: '',
+    );
+  });
+
   testWidgets('viewer opens directly and inspects initial media', (
     WidgetTester tester,
   ) async {
+    final tempDirectory = Directory.systemTemp.createTempSync(
+      'c2pa_viewer_widget_test_',
+    );
+    addTearDown(() => tempDirectory.deleteSync(recursive: true));
+    final sourceFile = File('${tempDirectory.path}/source.png');
+    sourceFile.writeAsBytesSync(
+      File('assets/app_icon_1024.png').readAsBytesSync(),
+    );
     final inspectedPaths = <String>[];
     await tester.pumpWidget(
       MaterialApp(
         home: C2paBrowserPage(
-          pendingPaths: const ['/tmp/source.png'],
+          pendingPaths: <String>[sourceFile.path],
+          checkForUpdatesOnLaunch: false,
           mediaLoader: (path) async {
             inspectedPaths.add(path);
             return VideoClipInfo(
@@ -29,10 +51,50 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(inspectedPaths, <String>['/tmp/source.png']);
+    expect(inspectedPaths, <String>[sourceFile.path]);
     expect(find.text('No Content Credentials'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('c2pa-file-location')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey<String>('c2pa-file-location')))
+          .dy,
+      lessThan(tester.getTopLeft(find.byType(TabBar)).dy),
+    );
+    expect(find.text('source.png'), findsOneWidget);
+    expect(find.text(sourceFile.path), findsOneWidget);
+    final fullPathTooltip = find.descendant(
+      of: find.byKey(const ValueKey<String>('c2pa-full-path')),
+      matching: find.byType(Tooltip),
+    );
+    expect(fullPathTooltip, findsOneWidget);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(2400, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pump();
+    expect(fullPathTooltip, findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('c2pa-file-size')),
+      findsOneWidget,
+    );
+    expect(find.text('v1.0.2 (102)'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('copy-media-path')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('reveal-media-file')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('copy-media-path')));
+    await tester.pump();
+    expect(find.text('Full path copied'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('open-media-file')),
       findsOneWidget,
@@ -47,7 +109,7 @@ void main() {
 
 class _FakeUpdateService extends GitHubUpdateService {
   const _FakeUpdateService({required this.fakeRelease})
-      : super(owner: 'test', repository: 'test');
+    : super(owner: 'test', repository: 'test');
 
   final GitHubRelease fakeRelease;
 
