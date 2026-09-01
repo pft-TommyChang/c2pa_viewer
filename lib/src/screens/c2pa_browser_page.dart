@@ -1095,49 +1095,168 @@ class _C2paHistoryTree extends StatefulWidget {
   State<_C2paHistoryTree> createState() => _C2paHistoryTreeState();
 }
 
+
+enum _ZoomMode { fit, oneToOne, free }
+
 class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
-  final ScrollController _horizontalController = ScrollController();
-  final ScrollController _verticalController = ScrollController();
+  final TransformationController _transformationController =
+      TransformationController();
+
+  _ZoomMode _zoomMode = _ZoomMode.fit;
+  Size _viewportSize = Size.zero;
+  Size _treeSize = Size.zero;
+
+  static const double _minScale = 0.15;
+  static const double _maxScale = 3.0;
+  static const double _scaleStep = 0.25;
+
+  @override
+  void initState() {
+    super.initState();
+    // Apply fit after first frame when sizes are known.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyMode());
+  }
+
+  @override
+  void didUpdateWidget(_C2paHistoryTree old) {
+    super.didUpdateWidget(old);
+    if (old.clip.path != widget.clip.path ||
+        old.report.activeManifestLabel != widget.report.activeManifestLabel) {
+      // New file — re-apply mode after layout settles.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyMode());
+    }
+  }
 
   @override
   void dispose() {
-    _horizontalController.dispose();
-    _verticalController.dispose();
+    _transformationController.dispose();
     super.dispose();
   }
 
-  void _scrollBy(ScrollController controller, double delta) {
-    if (!controller.hasClients || delta == 0) return;
-    final position = controller.position;
-    controller.jumpTo(
-      (position.pixels + delta).clamp(
-        position.minScrollExtent,
-        position.maxScrollExtent,
-      ),
-    );
+  double get _currentScale =>
+      _transformationController.value.getMaxScaleOnAxis();
+
+  void _applyMode() {
+    switch (_zoomMode) {
+      case _ZoomMode.fit:
+        _fitToView();
+      case _ZoomMode.oneToOne:
+        _resetZoom();
+      case _ZoomMode.free:
+        break;
+    }
   }
 
-  void _handlePointerSignal(PointerSignalEvent signal) {
-    if (signal is! PointerScrollEvent) return;
-    GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
-      final scroll = event as PointerScrollEvent;
-      final isShiftPressed = HardwareKeyboard.instance.logicalKeysPressed.any(
-        (key) =>
-            key == LogicalKeyboardKey.shiftLeft ||
-            key == LogicalKeyboardKey.shiftRight,
-      );
-      final horizontalDelta = scroll.scrollDelta.dx != 0
-          ? scroll.scrollDelta.dx
-          : scroll.scrollDelta.dy;
-      if (isShiftPressed || scroll.scrollDelta.dx.abs() > 0.1) {
-        _scrollBy(_horizontalController, horizontalDelta);
-      } else if (_verticalController.hasClients &&
-          _verticalController.position.maxScrollExtent > 0) {
-        _scrollBy(_verticalController, scroll.scrollDelta.dy);
-      } else {
-        _scrollBy(_horizontalController, horizontalDelta);
+  void _setMode(_ZoomMode mode) {
+    setState(() => _zoomMode = mode);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      switch (mode) {
+        case _ZoomMode.fit:
+          _fitToView();
+        case _ZoomMode.oneToOne:
+          _resetZoom();
+        case _ZoomMode.free:
+          break;
       }
     });
+  }
+
+  void _zoomTo(double newScale) {
+    final clamped = newScale.clamp(_minScale, _maxScale);
+    if (_viewportSize == Size.zero) {
+      _transformationController.value = Matrix4.identity()..scale(clamped);
+      return;
+    }
+    final focal = Offset(_viewportSize.width / 2, _viewportSize.height / 2);
+    final inScene = _transformationController.toScene(focal);
+    _transformationController.value = Matrix4.identity()
+      ..translate(
+        focal.dx - inScene.dx * clamped,
+        focal.dy - inScene.dy * clamped,
+      )
+      ..scale(clamped);
+  }
+
+  void _zoomIn() {
+    setState(() => _zoomMode = _ZoomMode.free);
+    _zoomTo(_currentScale + _scaleStep);
+  }
+
+  void _zoomOut() {
+    setState(() => _zoomMode = _ZoomMode.free);
+    _zoomTo(_currentScale - _scaleStep);
+  }
+
+  void _resetZoom() =>
+      _transformationController.value = Matrix4.identity();
+
+  void _fitToView() {
+    if (_viewportSize == Size.zero || _treeSize == Size.zero) return;
+    const padding = EdgeInsets.fromLTRB(16, 18, 24, 24);
+    final contentW = _treeSize.width + padding.horizontal;
+    final contentH = _treeSize.height + padding.vertical;
+    final fitScale = math
+        .min(_viewportSize.width / contentW, _viewportSize.height / contentH)
+        .clamp(_minScale, _maxScale);
+    final tx = (_viewportSize.width - contentW * fitScale) / 2;
+    final ty = (_viewportSize.height - contentH * fitScale) / 2;
+    _transformationController.value = Matrix4.identity()
+      ..translate(tx, ty)
+      ..scale(fitScale);
+  }
+
+  Widget _buildZoomControls() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _c2paPanelBackground.withAlpha(230),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _c2paCardBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _ZoomIconButton(
+            icon: Icons.add,
+            tooltip: 'Zoom in',
+            onPressed: _zoomIn,
+          ),
+          _ZoomSep(),
+          _ZoomModeButton(
+            label: 'fit',
+            tooltip: 'Fit to view',
+            active: _zoomMode == _ZoomMode.fit,
+            onPressed: () => _setMode(_ZoomMode.fit),
+          ),
+          _ZoomSep(),
+          _ZoomModeButton(
+            label: '1:1',
+            tooltip: '100% zoom',
+            active: _zoomMode == _ZoomMode.oneToOne,
+            onPressed: () => _setMode(_ZoomMode.oneToOne),
+          ),
+          _ZoomSep(),
+          _ZoomModeButton(
+            label: 'free',
+            tooltip: 'Free pan/zoom',
+            active: _zoomMode == _ZoomMode.free,
+            onPressed: () => _setMode(_ZoomMode.free),
+          ),
+          _ZoomSep(),
+          _ZoomIconButton(
+            icon: Icons.remove,
+            tooltip: 'Zoom out',
+            onPressed: _zoomOut,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1181,58 +1300,41 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                 borderRadius: BorderRadius.circular(17),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
+                    _viewportSize = constraints.biggest;
                     final treeWidth = math.max(
                       constraints.maxWidth,
                       widestLevel * 264.0,
                     );
-                    return Listener(
-                      key: const ValueKey<String>('c2pa-history-viewport'),
-                      onPointerSignal: _handlePointerSignal,
-                      child: Scrollbar(
-                        controller: _verticalController,
-                        thumbVisibility: true,
-                        trackVisibility: true,
-                        interactive: true,
-                        notificationPredicate: (notification) =>
-                            notification.metrics.axis == Axis.vertical,
-                        child: Scrollbar(
-                          controller: _horizontalController,
-                          thumbVisibility: true,
-                          trackVisibility: true,
-                          interactive: true,
-                          scrollbarOrientation: ScrollbarOrientation.bottom,
-                          notificationPredicate: (notification) =>
-                              notification.metrics.axis == Axis.horizontal,
-                          child: SingleChildScrollView(
-                            key: const ValueKey<String>(
-                              'c2pa-history-horizontal',
-                            ),
-                            controller: _horizontalController,
-                            scrollDirection: Axis.horizontal,
+                    _treeSize = Size(treeWidth, treeHeight);
+                    return Stack(
+                      children: <Widget>[
+                        InteractiveViewer(
+                          transformationController: _transformationController,
+                          boundaryMargin:
+                              const EdgeInsets.all(double.infinity),
+                          minScale: _minScale,
+                          maxScale: _maxScale,
+                          constrained: false,
+                          onInteractionStart: (_) {
+                            if (_zoomMode != _ZoomMode.free) {
+                              setState(() => _zoomMode = _ZoomMode.free);
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 18, 24, 24),
                             child: SizedBox(
                               width: treeWidth,
-                              height: constraints.maxHeight,
-                              child: SingleChildScrollView(
-                                key: const ValueKey<String>(
-                                  'c2pa-history-vertical',
-                                ),
-                                controller: _verticalController,
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  18,
-                                  24,
-                                  24,
-                                ),
-                                child: SizedBox(
-                                  width: treeWidth - 40,
-                                  height: treeHeight,
-                                  child: _C2paTreeCanvas(nodes: nodes),
-                                ),
-                              ),
+                              height: treeHeight,
+                              child: _C2paTreeCanvas(nodes: nodes),
                             ),
                           ),
                         ),
-                      ),
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          child: _buildZoomControls(),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -1796,3 +1898,89 @@ bool _isAiDigitalSourceType(String? value) {
       normalized.contains('algorithmicallyenhanced');
 }
 
+
+// ── Zoom control widgets ─────────────────────────────────────────────────────
+
+
+// ── Zoom control widgets ─────────────────────────────────────────────────────
+
+class _ZoomIconButton extends StatelessWidget {
+  const _ZoomIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 16, color: _c2paMutedText),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomModeButton extends StatelessWidget {
+  const _ZoomModeButton({
+    required this.label,
+    required this.tooltip,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String tooltip;
+  final bool active;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? _c2paAccent.withAlpha(26) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active ? _c2paAccent : _c2paMutedText,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomSep extends StatelessWidget {
+  const _ZoomSep();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 20,
+      child: VerticalDivider(width: 1, thickness: 1, color: _c2paCardBorder),
+    );
+  }
+}
