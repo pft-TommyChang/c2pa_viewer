@@ -12,8 +12,8 @@ void main() {
     PackageInfo.setMockInitialValues(
       appName: 'Perfect C2PA',
       packageName: 'c2pa_viewer',
-      version: '1.0.2',
-      buildNumber: '102',
+      version: '1.0.3',
+      buildNumber: '103',
       buildSignature: '',
     );
   });
@@ -83,7 +83,7 @@ void main() {
       find.byKey(const ValueKey<String>('c2pa-file-size')),
       findsOneWidget,
     );
-    expect(find.text('v1.0.2 (102)'), findsOneWidget);
+    expect(find.text('v1.0.3 (103)'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('copy-media-path')),
       findsOneWidget,
@@ -162,6 +162,21 @@ void main() {
         .getMaxScaleOnAxis();
 
     expect(resizedScale, greaterThan(initialScale));
+
+    MouseRegion panRegion() => tester.widget<MouseRegion>(
+      find.byKey(const ValueKey<String>('c2pa-history-pan-region')),
+    );
+    expect(panRegion().cursor, SystemMouseCursors.grab);
+    final gesture = await tester.startGesture(
+      tester.getCenter(
+        find.byKey(const ValueKey<String>('c2pa-history-viewer')),
+      ),
+    );
+    await tester.pump();
+    expect(panRegion().cursor, SystemMouseCursors.grabbing);
+    await gesture.up();
+    await tester.pump();
+    expect(panRegion().cursor, SystemMouseCursors.grab);
   });
   _updateTests();
 }

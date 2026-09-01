@@ -141,7 +141,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
         setState(() => _availableUpdate = release);
       }
     } catch (error) {
-      debugPrint('Background update check failed: \$error');
+      debugPrint('Background update check failed: $error');
     } finally {
       _isCheckingForUpdates = false;
     }
@@ -150,7 +150,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   Future<void> _openReleasePage() async {
     final pageUrl = Uri.https(
       'github.com',
-      '/\${widget.updateService.owner}/\${widget.updateService.repository}/releases',
+      '/${widget.updateService.owner}/${widget.updateService.repository}/releases',
     );
     try {
       final didLaunch = await launchUrl(
@@ -378,6 +378,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                                     ),
                                     labelColor: Color(0xFF171A21),
                                     unselectedLabelColor: _c2paMutedText,
+                                    overlayColor:
+                                        WidgetStatePropertyAll<Color>(
+                                          Color(0x08697180),
+                                        ),
                                     labelStyle: TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1356,6 +1360,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
   Size _viewportSize = Size.zero;
   Size _treeSize = Size.zero;
   bool _fitScheduled = false;
+  bool _isCanvasGrabbed = false;
 
   static const double _minScale = 0.15;
   static const double _maxScale = 3.0;
@@ -1405,6 +1410,12 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
       _fitScheduled = false;
       if (mounted && _zoomMode == _ZoomMode.fit) _fitToView();
     });
+  }
+
+  void _setCanvasGrabbed(bool grabbed) {
+    if (_isCanvasGrabbed != grabbed) {
+      setState(() => _isCanvasGrabbed = grabbed);
+    }
   }
 
   void _setMode(_ZoomMode mode) {
@@ -1577,24 +1588,49 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                     }
                     return Stack(
                       children: <Widget>[
-                        InteractiveViewer(
-                          key: const ValueKey<String>('c2pa-history-viewer'),
-                          transformationController: _transformationController,
-                          boundaryMargin: const EdgeInsets.all(double.infinity),
-                          minScale: _minScale,
-                          maxScale: _maxScale,
-                          constrained: false,
-                          onInteractionStart: (_) {
-                            if (_zoomMode != _ZoomMode.free) {
-                              setState(() => _zoomMode = _ZoomMode.free);
-                            }
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 18, 24, 24),
-                            child: SizedBox(
-                              width: treeWidth,
-                              height: treeHeight,
-                              child: _C2paTreeCanvas(nodes: nodes),
+                        Listener(
+                          onPointerDown: (_) => _setCanvasGrabbed(true),
+                          onPointerUp: (_) => _setCanvasGrabbed(false),
+                          onPointerCancel: (_) => _setCanvasGrabbed(false),
+                          child: MouseRegion(
+                            key: const ValueKey<String>(
+                              'c2pa-history-pan-region',
+                            ),
+                            cursor: _isCanvasGrabbed
+                                ? SystemMouseCursors.grabbing
+                                : SystemMouseCursors.grab,
+                            child: InteractiveViewer(
+                              key: const ValueKey<String>(
+                                'c2pa-history-viewer',
+                              ),
+                              transformationController:
+                                  _transformationController,
+                              boundaryMargin: const EdgeInsets.all(
+                                double.infinity,
+                              ),
+                              minScale: _minScale,
+                              maxScale: _maxScale,
+                              constrained: false,
+                              onInteractionStart: (_) {
+                                if (_zoomMode != _ZoomMode.free) {
+                                  setState(() => _zoomMode = _ZoomMode.free);
+                                }
+                              },
+                              onInteractionEnd: (_) =>
+                                  _setCanvasGrabbed(false),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  18,
+                                  24,
+                                  24,
+                                ),
+                                child: SizedBox(
+                                  width: treeWidth,
+                                  height: treeHeight,
+                                  child: _C2paTreeCanvas(nodes: nodes),
+                                ),
+                              ),
                             ),
                           ),
                         ),
