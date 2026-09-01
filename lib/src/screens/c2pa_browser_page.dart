@@ -177,8 +177,8 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
     _historyIndex = _history.length - 1;
   }
 
-  bool get _canGoPrev => _historyIndex > 0;
-  bool get _canGoNext => _historyIndex < _history.length - 1;
+  bool get _canGoPrev => _historyIndex > 0 && !_isParsing;
+  bool get _canGoNext => _historyIndex < _history.length - 1 && !_isParsing;
 
   Future<void> _navigatePrev() async {
     if (!_canGoPrev) return;
@@ -327,7 +327,17 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                     ),
                   ),
                 ),
-                if (_isParsing)
+                // Thin progress bar while switching files (old content stays visible)
+                if (_isParsing && _hasMedia)
+                  const Positioned(
+                    top: 0, left: 0, right: 0,
+                    child: LinearProgressIndicator(
+                      key: ValueKey<String>('c2pa-nav-progress'),
+                      minHeight: 2,
+                    ),
+                  ),
+                // Full overlay with spinner only on the very first load
+                if (_isParsing && !_hasMedia)
                   const Positioned.fill(
                     child: ColoredBox(
                       key: ValueKey<String>('c2pa-parsing-overlay'),
