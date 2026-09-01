@@ -76,6 +76,8 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   bool _hasMedia = false;
   int _parseGeneration = 0;
   String? _lastInspectedPath;
+  final List<String> _history = [];
+  int _historyIndex = -1;
 
   @override
   void initState() {
@@ -122,18 +124,23 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   }
 
   Future<void> _handleDrop(List<DropItem> items) async {
-    final path = items
+    final paths = items
         .where((item) => item is! DropItemDirectory)
         .map((item) => item.path)
         .where(_isSupportedMediaPath)
-        .firstOrNull;
+        .toList();
     setState(() => _isDragging = false);
-    if (path == null) {
+    if (paths.isEmpty) {
       _showErrorToast('No supported media file was dropped.');
       return;
     }
-
-    await _inspectPath(path);
+    // Truncate forward history and append all dropped files.
+    if (_historyIndex < _history.length - 1) {
+      _history.removeRange(_historyIndex + 1, _history.length);
+    }
+    _history.addAll(paths);
+    _historyIndex = _history.length - paths.length;
+    await _inspectPath(paths.first, addToHistory: false);
   }
 
   Future<void> _pickMedia() async {
@@ -161,11 +168,36 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
     if (file != null) await _inspectPath(file.path);
   }
 
-  Future<void> _inspectPath(String path) async {
+  // Push path onto history, truncating any forward entries.
+  void _pushPath(String path) {
+    if (_historyIndex < _history.length - 1) {
+      _history.removeRange(_historyIndex + 1, _history.length);
+    }
+    _history.add(path);
+    _historyIndex = _history.length - 1;
+  }
+
+  bool get _canGoPrev => _historyIndex > 0;
+  bool get _canGoNext => _historyIndex < _history.length - 1;
+
+  Future<void> _navigatePrev() async {
+    if (!_canGoPrev) return;
+    _historyIndex--;
+    await _inspectPath(_history[_historyIndex], addToHistory: false);
+  }
+
+  Future<void> _navigateNext() async {
+    if (!_canGoNext) return;
+    _historyIndex++;
+    await _inspectPath(_history[_historyIndex], addToHistory: false);
+  }
+
+  Future<void> _inspectPath(String path, {bool addToHistory = true}) async {
     if (!_isSupportedMediaPath(path)) {
       _showErrorToast('No supported media file was provided.');
       return;
     }
+    if (addToHistory) _pushPath(path);
     _lastInspectedPath = path;
     final generation = ++_parseGeneration;
     setState(() => _isParsing = true);
@@ -207,6 +239,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       onOpen: () => unawaited(_pickMedia()),
                       onClose:
                           widget.onClose ?? () => Navigator.of(context).pop(),
+                      onPrev: () => unawaited(_navigatePrev()),
+                      onNext: () => unawaited(_navigateNext()),
+                      canGoPrev: _canGoPrev,
+                      canGoNext: _canGoNext,
                     ),
                     if (report != null)
                       Padding(
@@ -343,11 +379,19 @@ class _C2paPageHeader extends StatelessWidget {
     required this.clip,
     required this.onOpen,
     required this.onClose,
+    required this.onPrev,
+    required this.onNext,
+    required this.canGoPrev,
+    required this.canGoNext,
   });
 
   final VideoClipInfo? clip;
   final VoidCallback onOpen;
   final VoidCallback onClose;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+  final bool canGoPrev;
+  final bool canGoNext;
 
   @override
   Widget build(BuildContext context) {
@@ -425,6 +469,16 @@ class _C2paPageHeader extends StatelessWidget {
           if (status != null) _C2paStatusPill(status: status),
           const SizedBox(width: 6),
           IconButton(
+            tooltip: 'Previous file',
+            onPressed: canGoPrev ? onPrev : null,
+            icon: const Icon(Icons.chevron_left),
+          ),
+          IconButton(
+            tooltip: 'Next file',
+            onPressed: canGoNext ? onNext : null,
+            icon: const Icon(Icons.chevron_right),
+          ),
+          IconButton(
             key: const ValueKey<String>('open-media-file'),
             tooltip: 'Open media',
             onPressed: onOpen,
@@ -477,12 +531,7 @@ class _C2paDropPrompt extends StatelessWidget {
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 5),
-            const Text(
-              'If multiple files are dropped, only the first media file is inspected.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _c2paMutedText),
-            ),
+
           ],
         ),
       ),
@@ -565,7 +614,7 @@ class _C2paNoCredentialsViewState extends State<_C2paNoCredentialsView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (thumbnailWidget != null) thumbnailWidget,
+              ?thumbnailWidget,
               Row(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -1742,3 +1791,4 @@ bool _isAiDigitalSourceType(String? value) {
       normalized.contains('compositesynthetic') ||
       normalized.contains('algorithmicallyenhanced');
 }
+
