@@ -15,6 +15,18 @@ class MediaInspectionService {
 
   final AiMetadataService aiMetadataService;
 
+  static Future<Uint8List?> thumbnail(String path) async {
+    try {
+      final result = await _mediaProbeChannel.invokeMethod<Uint8List>(
+        'thumbnailForMedia',
+        <String, Object?>{'path': path},
+      );
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<VideoClipInfo> inspect(String path) async {
     var hasSecurityScopedAccess = false;
     try {

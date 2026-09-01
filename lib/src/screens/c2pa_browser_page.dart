@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import '../services/media_inspection_service.dart' show MediaInspectionService;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -379,16 +380,45 @@ class _C2paPageHeader extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text(
-                  clip == null
-                      ? 'Drop a media file anywhere on this page'
-                      : p.basename(clip!.path),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: _c2paMutedText),
-                ),
+                if (clip == null)
+                  Text(
+                    'Drop a media file anywhere on this page',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: _c2paMutedText),
+                  )
+                else
+                  Row(
+                    children: <Widget>[
+                      Tooltip(
+                        message: 'Reveal in Finder',
+                        child: GestureDetector(
+                          onTap: () => Process.run('open', <String>['-R', clip!.path]),
+                          child: Icon(
+                            Icons.folder_outlined,
+                            size: 14,
+                            color: _c2paMutedText,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Tooltip(
+                          message: clip!.path,
+                          child: Text(
+                            p.basename(clip!.path),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: _c2paMutedText),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -469,13 +499,64 @@ class _C2paAwaitingMediaView extends StatelessWidget {
   }
 }
 
-class _C2paNoCredentialsView extends StatelessWidget {
+class _C2paNoCredentialsView extends StatefulWidget {
   const _C2paNoCredentialsView({required this.clip});
 
   final VideoClipInfo clip;
 
   @override
+  State<_C2paNoCredentialsView> createState() => _C2paNoCredentialsViewState();
+}
+
+class _C2paNoCredentialsViewState extends State<_C2paNoCredentialsView> {
+  Future<Uint8List?>? _thumbnailFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.clip.isPhoto) {
+      _thumbnailFuture = MediaInspectionService.thumbnail(widget.clip.path);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_C2paNoCredentialsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.clip.path != widget.clip.path) {
+      setState(() {
+        _thumbnailFuture = widget.clip.isPhoto
+            ? null
+            : MediaInspectionService.thumbnail(widget.clip.path);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final clip = widget.clip;
+
+    Widget? thumbnailWidget;
+    if (clip.isPhoto) {
+      thumbnailWidget = _buildThumbnailContainer(
+        child: Image.file(
+          File(clip.path),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      );
+    } else if (_thumbnailFuture != null) {
+      thumbnailWidget = FutureBuilder<Uint8List?>(
+        future: _thumbnailFuture,
+        builder: (context, snapshot) {
+          final data = snapshot.data;
+          if (data == null) return const SizedBox.shrink();
+          return _buildThumbnailContainer(
+            child: Image.memory(data, fit: BoxFit.contain),
+          );
+        },
+      );
+    }
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
@@ -484,17 +565,24 @@ class _C2paNoCredentialsView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Icon(
-                Icons.gpp_maybe_outlined,
-                size: 52,
-                color: _c2paMutedText,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'No Content Credentials',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              if (thumbnailWidget != null) thumbnailWidget,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  const Icon(
+                    Icons.gpp_maybe_outlined,
+                    size: 28,
+                    color: _c2paMutedText,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'No Content Credentials',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -506,6 +594,21 @@ class _C2paNoCredentialsView extends StatelessWidget {
               const _C2paDropPrompt(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnailContainer({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 240,
+          height: 135,
+          color: const Color(0xFF171A21),
+          child: child,
         ),
       ),
     );
@@ -607,7 +710,8 @@ class _C2paOverview extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(
+              AspectRatio(
+                aspectRatio: 1.0,
                 child: _C2paPreviewCard(
                   key: const ValueKey<String>('c2pa-overview-preview'),
                   clip: clip,
@@ -676,14 +780,45 @@ class _C2paOverview extends StatelessWidget {
   }
 }
 
-class _C2paPreviewCard extends StatelessWidget {
-  const _C2paPreviewCard({super.key, required this.clip, this.controller});
+class _C2paPreviewCard extends StatefulWidget {
+  const _C2paPreviewCard({
+    super.key,
+    required this.clip,
+    this.controller,
+  });
 
   final VideoClipInfo clip;
   final VideoPlayerController? controller;
 
   @override
+  State<_C2paPreviewCard> createState() => _C2paPreviewCardState();
+}
+
+class _C2paPreviewCardState extends State<_C2paPreviewCard> {
+  Future<Uint8List?>? _thumbnailFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.clip.isPhoto) {
+      _thumbnailFuture = MediaInspectionService.thumbnail(widget.clip.path);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_C2paPreviewCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.clip.path != widget.clip.path) {
+      _thumbnailFuture = widget.clip.isPhoto
+          ? null
+          : MediaInspectionService.thumbnail(widget.clip.path);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final clip = widget.clip;
+    final controller = widget.controller;
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -699,7 +834,7 @@ class _C2paPreviewCard extends StatelessWidget {
                 color: Colors.white54,
               ),
             )
-          : controller != null && controller!.value.isInitialized
+          : controller != null && controller.value.isInitialized
           ? Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -707,57 +842,32 @@ class _C2paPreviewCard extends StatelessWidget {
                   color: const Color(0xFF171A21),
                   child: Center(
                     child: AspectRatio(
-                      aspectRatio: controller!.value.aspectRatio > 0
-                          ? controller!.value.aspectRatio
+                      aspectRatio: controller.value.aspectRatio > 0
+                          ? controller.value.aspectRatio
                           : clip.width > 0 && clip.height > 0
                           ? clip.width / clip.height
                           : 16 / 9,
-                      child: VideoPlayer(controller!),
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
-                    color: Colors.black54,
-                    child: Text(
-                      p.basename(clip.path),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white),
+                      child: VideoPlayer(controller),
                     ),
                   ),
                 ),
               ],
             )
-          : Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                const Icon(
-                  Icons.movie_outlined,
-                  size: 56,
-                  color: Colors.white54,
-                ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    color: Colors.black45,
-                    child: Text(
-                      p.basename(clip.path),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white),
-                    ),
+          : FutureBuilder<Uint8List?>(
+              future: _thumbnailFuture,
+              builder: (context, snapshot) {
+                final data = snapshot.data;
+                if (data != null) {
+                  return Image.memory(data, fit: BoxFit.contain);
+                }
+                return const Center(
+                  child: Icon(
+                    Icons.movie_outlined,
+                    size: 56,
+                    color: Colors.white54,
                   ),
-                ),
-              ],
+                );
+              },
             ),
     );
   }

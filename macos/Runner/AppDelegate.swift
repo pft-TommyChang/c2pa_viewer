@@ -59,6 +59,8 @@ class AppDelegate: FlutterAppDelegate {
         result(nil)
       case "probeMedia":
         self?.probeMedia(path: path, result: result)
+      case "thumbnailForMedia":
+        self?.thumbnailForMedia(path: path, result: result)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -159,6 +161,31 @@ class AppDelegate: FlutterAppDelegate {
       securityScopedMediaURLs.removeValue(forKey: path)
     } else {
       securityScopedMediaURLs[path] = urls
+    }
+  }
+
+
+  private func thumbnailForMedia(path: String, result: @escaping FlutterResult) {
+    let url = URL(fileURLWithPath: path)
+    let asset = AVURLAsset(url: url)
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: 512, height: 512)
+    let time = CMTime(seconds: 0, preferredTimescale: 600)
+    generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
+      _, image, _, status, _ in
+      if status == .succeeded, let image = image {
+        let nsImage = NSImage(cgImage: image, size: .zero)
+        if let tiffData = nsImage.tiffRepresentation,
+          let bitmapRep = NSBitmapImageRep(data: tiffData),
+          let jpegData = bitmapRep.representation(
+            using: .jpeg, properties: [.compressionFactor: 0.75])
+        {
+          result(FlutterStandardTypedData(bytes: jpegData))
+          return
+        }
+      }
+      result(nil)
     }
   }
 
