@@ -27,6 +27,40 @@ class MediaInspectionService {
     }
   }
 
+  static Future<void> removeC2pa(String sourcePath, String outputPath) async {
+    await _mediaProbeChannel.invokeMethod<void>(
+      'removeC2paFromMedia',
+      <String, Object?>{'path': sourcePath, 'outputPath': outputPath},
+    );
+  }
+
+  static Future<void> withSecurityScopedAccess(
+    String path,
+    Future<void> Function() action,
+  ) async {
+    var hasSecurityScopedAccess = false;
+    try {
+      hasSecurityScopedAccess =
+          await _mediaProbeChannel.invokeMethod<bool>(
+            'beginAccessingMedia',
+            <String, Object?>{'path': path},
+          ) ??
+          false;
+    } on MissingPluginException {
+      // Tests and non-native runners can operate without security scoping.
+    }
+    try {
+      await action();
+    } finally {
+      if (hasSecurityScopedAccess) {
+        await _mediaProbeChannel.invokeMethod<void>(
+          'endAccessingMedia',
+          <String, Object?>{'path': path},
+        );
+      }
+    }
+  }
+
   Future<VideoClipInfo> inspect(String path) async {
     var hasSecurityScopedAccess = false;
     try {

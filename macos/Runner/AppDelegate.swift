@@ -1,6 +1,7 @@
 import AVFoundation
 import Cocoa
 import FlutterMacOS
+import ImageIO
 
 @main
 class AppDelegate: FlutterAppDelegate {
@@ -61,6 +62,22 @@ class AppDelegate: FlutterAppDelegate {
         self?.probeMedia(path: path, result: result)
       case "thumbnailForMedia":
         self?.thumbnailForMedia(path: path, result: result)
+      case "removeC2paFromMedia":
+        guard let outputPath = arguments["outputPath"] as? String else {
+          result(
+            FlutterError(
+              code: "invalid-arguments",
+              message: "Expected an output media file path.",
+              details: nil
+            )
+          )
+          return
+        }
+        self?.removeC2paFromMedia(
+          path: path,
+          outputPath: outputPath,
+          result: result
+        )
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -167,6 +184,12 @@ class AppDelegate: FlutterAppDelegate {
 
   private func thumbnailForMedia(path: String, result: @escaping FlutterResult) {
     let url = URL(fileURLWithPath: path)
+    if let image = NSImage(contentsOf: url),
+      let jpegData = thumbnailJPEG(for: image)
+    {
+      result(FlutterStandardTypedData(bytes: jpegData))
+      return
+    }
     let asset = AVURLAsset(url: url)
     let generator = AVAssetImageGenerator(asset: asset)
     generator.appliesPreferredTrackTransform = true
@@ -176,16 +199,139 @@ class AppDelegate: FlutterAppDelegate {
       _, image, _, status, _ in
       if status == .succeeded, let image = image {
         let nsImage = NSImage(cgImage: image, size: .zero)
-        if let tiffData = nsImage.tiffRepresentation,
-          let bitmapRep = NSBitmapImageRep(data: tiffData),
-          let jpegData = bitmapRep.representation(
-            using: .jpeg, properties: [.compressionFactor: 0.75])
-        {
+        if let jpegData = self.thumbnailJPEG(for: nsImage) {
           result(FlutterStandardTypedData(bytes: jpegData))
           return
         }
       }
       result(nil)
+    }
+  }
+
+  private func thumbnailJPEG(for image: NSImage) -> Data? {
+    guard let tiffData = image.tiffRepresentation,
+      let bitmapRep = NSBitmapImageRep(data: tiffData)
+    else { return nil }
+    return bitmapRep.representation(
+      using: .jpeg,
+      properties: [.compressionFactor: 0.75]
+    )
+  }
+
+  private func removeC2paFromMedia(
+    path: String,
+    outputPath: String,
+    result: @escaping FlutterResult
+  ) {
+    let sourceURL = URL(fileURLWithPath: path)
+    let outputURL = URL(fileURLWithPath: outputPath)
+    let photoExtensions: Set<String> = [
+      "jpg", "jpeg", "png", "webp", "heic", "heif",
+    ]
+    if photoExtensions.contains(sourceURL.pathExtension.lowercased()) {
+      removeC2paFromImage(
+        sourceURL: sourceURL,
+        outputURL: outputURL,
+        result: result
+      )
+      return
+    }
+    removeC2paFromVideo(
+      sourceURL: sourceURL,
+      outputURL: outputURL,
+      result: result
+    )
+  }
+
+  private func removeC2paFromImage(
+    sourceURL: URL,
+    outputURL: URL,
+    result: FlutterResult
+  ) {
+    guard
+      let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
+      let imageType = CGImageSourceGetType(source),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+      let destination = CGImageDestinationCreateWithURL(
+        outputURL as CFURL,
+        imageType,
+        1,
+        nil
+      )
+    else {
+      result(
+        FlutterError(
+          code: "c2pa-remove-failed",
+          message: "The image could not be rewritten without C2PA.",
+          details: sourceURL.path
+        )
+      )
+      return
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+      result(
+        FlutterError(
+          code: "c2pa-remove-failed",
+          message: "The image could not be saved without C2PA.",
+          details: outputURL.path
+        )
+      )
+      return
+    }
+    result(nil)
+  }
+
+  private func removeC2paFromVideo(
+    sourceURL: URL,
+    outputURL: URL,
+    result: @escaping FlutterResult
+  ) {
+    let asset = AVURLAsset(url: sourceURL)
+    guard
+      let exportSession = AVAssetExportSession(
+        asset: asset,
+        presetName: AVAssetExportPresetPassthrough
+      ),
+      let outputFileType = outputFileType(for: outputURL.pathExtension),
+      exportSession.supportedFileTypes.contains(outputFileType)
+    else {
+      result(
+        FlutterError(
+          code: "c2pa-remove-unsupported",
+          message: "Removing C2PA is not supported for this video format.",
+          details: sourceURL.pathExtension
+        )
+      )
+      return
+    }
+    exportSession.outputURL = outputURL
+    exportSession.outputFileType = outputFileType
+    exportSession.metadata = []
+    exportSession.exportAsynchronously {
+      switch exportSession.status {
+      case .completed:
+        result(nil)
+      default:
+        result(
+          FlutterError(
+            code: "c2pa-remove-failed",
+            message: "The video could not be rewritten without C2PA.",
+            details: exportSession.error?.localizedDescription
+          )
+        )
+      }
+    }
+  }
+
+  private func outputFileType(for extensionName: String) -> AVFileType? {
+    switch extensionName.lowercased() {
+    case "mp4", "m4v":
+      return .mp4
+    case "mov":
+      return .mov
+    default:
+      return nil
     }
   }
 

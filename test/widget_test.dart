@@ -1,11 +1,29 @@
 import 'dart:io';
 
 import 'package:c2pa_viewer/src/models.dart';
+import 'package:c2pa_viewer/src/services/c2pa_test_sign_service.dart';
+import 'package:c2pa_viewer/src/services/c2pa_write_options_store.dart';
 import 'package:c2pa_viewer/src/services/github_update_service.dart';
 import 'package:c2pa_viewer/src/screens/c2pa_browser_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+class _MemoryC2paWriteOptionsStore implements C2paWriteOptionsStore {
+  _MemoryC2paWriteOptionsStore(this.options);
+
+  C2paWriteOptions options;
+  int saveCount = 0;
+
+  @override
+  Future<C2paWriteOptions> load() async => options;
+
+  @override
+  Future<void> save(C2paWriteOptions options) async {
+    this.options = options;
+    saveCount++;
+  }
+}
 
 void main() {
   setUpAll(() {
@@ -30,6 +48,12 @@ void main() {
       File('assets/app_icon_1024.png').readAsBytesSync(),
     );
     final inspectedPaths = <String>[];
+    final signedPaths = <String>[];
+    final signedOutputPath = '${tempDirectory.path}/source_test_signed.png';
+    final writeOptionsStore = _MemoryC2paWriteOptionsStore(
+      const C2paWriteOptions(mode: C2paWriteMode.add, createNewFile: true),
+    );
+    var destinationPickerCalls = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: C2paBrowserPage(
@@ -48,6 +72,14 @@ void main() {
               aiMetadata: const AiMediaMetadata(c2paStatus: C2paStatus.absent),
             );
           },
+          testWriter: (clip, outputPath, mode) async {
+            signedPaths.add('${mode.name}: ${clip.path} -> $outputPath');
+          },
+          testSignDestinationPicker: (_, _) async {
+            destinationPickerCalls++;
+            return signedOutputPath;
+          },
+          writeOptionsStore: writeOptionsStore,
         ),
       ),
     );
@@ -99,6 +131,64 @@ void main() {
       find.byKey(const ValueKey<String>('open-media-file')),
       findsOneWidget,
     );
+    final testSignButton = find.byKey(
+      const ValueKey<String>('test-sign-media'),
+    );
+    expect(testSignButton, findsOneWidget);
+    expect(
+      tester.getTopLeft(testSignButton).dx,
+      lessThan(tester.getTopLeft(find.byTooltip('Previous file')).dx),
+    );
+    await tester.tap(testSignButton);
+    await tester.pumpAndSettle();
+    expect(find.text('C2PA write test'), findsOneWidget);
+    expect(find.text('增加 C2PA'), findsOneWidget);
+    expect(find.text('覆蓋 C2PA'), findsOneWidget);
+    expect(find.text('移除 C2PA'), findsOneWidget);
+    expect(find.text('Create new file'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('run-c2pa-write-test')));
+    await tester.pumpAndSettle();
+    expect(signedPaths, <String>[
+      'add: ${sourceFile.path} -> $signedOutputPath',
+    ]);
+    expect(inspectedPaths, <String>[sourceFile.path, signedOutputPath]);
+    expect(destinationPickerCalls, 1);
+
+    await tester.tap(testSignButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('c2pa-write-remove')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('c2pa-create-new-file')),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('run-c2pa-write-test')));
+    await tester.pumpAndSettle();
+    expect(signedPaths.last, 'remove: $signedOutputPath -> $signedOutputPath');
+    expect(destinationPickerCalls, 1);
+    expect(inspectedPaths.last, signedOutputPath);
+    expect(writeOptionsStore.options.mode, C2paWriteMode.remove);
+    expect(writeOptionsStore.options.createNewFile, isFalse);
+    expect(writeOptionsStore.saveCount, 2);
+
+    await tester.tap(testSignButton);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<RadioGroup<C2paWriteMode>>(
+            find.byType(RadioGroup<C2paWriteMode>),
+          )
+          .groupValue,
+      C2paWriteMode.remove,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey<String>('c2pa-create-new-file')),
+          )
+          .value,
+      isFalse,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('fit mode updates when the history viewport is resized', (
@@ -148,17 +238,13 @@ void main() {
     InteractiveViewer historyViewer() => tester.widget<InteractiveViewer>(
       find.byKey(const ValueKey<String>('c2pa-history-viewer')),
     );
-    final initialScale = historyViewer()
-        .transformationController!
-        .value
+    final initialScale = historyViewer().transformationController!.value
         .getMaxScaleOnAxis();
 
     tester.view.physicalSize = const Size(1200, 900);
     await tester.pump();
     await tester.pump();
-    final resizedScale = historyViewer()
-        .transformationController!
-        .value
+    final resizedScale = historyViewer().transformationController!.value
         .getMaxScaleOnAxis();
 
     expect(resizedScale, greaterThan(initialScale));

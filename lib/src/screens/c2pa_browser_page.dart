@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
-import '../services/media_inspection_service.dart' show MediaInspectionService;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,9 +10,12 @@ import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
-import '../services/github_update_service.dart';
 
 import '../models.dart';
+import '../services/c2pa_test_sign_service.dart';
+import '../services/c2pa_write_options_store.dart';
+import '../services/github_update_service.dart';
+import '../services/media_inspection_service.dart' show MediaInspectionService;
 
 const Set<String> _supportedVideoExtensions = <String>{
   '.mp4',
@@ -53,6 +55,8 @@ VideoClipInfo _emptyC2paClip() => const VideoClipInfo(
 );
 
 typedef C2paMediaLoader = Future<VideoClipInfo> Function(String path);
+typedef C2paTestSignDestinationPicker =
+    Future<String?> Function(VideoClipInfo clip, C2paWriteMode mode);
 
 Future<void> _revealMediaFile(String path) async {
   if (Platform.isWindows) {
@@ -68,6 +72,9 @@ class C2paBrowserPage extends StatefulWidget {
     required this.mediaLoader,
     this.pendingPaths = const [],
     this.openGeneration = 0,
+    this.testWriter,
+    this.testSignDestinationPicker,
+    this.writeOptionsStore,
     this.checkForUpdatesOnLaunch = true,
     this.updateService = const GitHubUpdateService(
       owner: 'pft-TommyChang',
@@ -78,6 +85,9 @@ class C2paBrowserPage extends StatefulWidget {
   final C2paMediaLoader mediaLoader;
   final List<String> pendingPaths;
   final int openGeneration;
+  final C2paTestWriter? testWriter;
+  final C2paTestSignDestinationPicker? testSignDestinationPicker;
+  final C2paWriteOptionsStore? writeOptionsStore;
   final bool checkForUpdatesOnLaunch;
   final GitHubUpdateService updateService;
 
@@ -90,11 +100,15 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   late VideoPlayerController? _controller;
   bool _isDragging = false;
   bool _isParsing = false;
+  bool _isTestSigning = false;
   bool _hasMedia = false;
   int _parseGeneration = 0;
   final List<String> _history = [];
   int _historyIndex = -1;
   final FocusNode _focusNode = FocusNode();
+  C2paWriteOptionsStore? _writeOptionsStore;
+  C2paWriteOptions? _lastWriteOptions;
+  Future<void> _writeOptionsSaveQueue = Future<void>.value();
 
   // Update check
   GitHubRelease? _availableUpdate;
@@ -106,6 +120,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
     super.initState();
     _clip = _emptyC2paClip();
     _controller = null;
+    _writeOptionsStore = widget.writeOptionsStore;
     if (widget.pendingPaths.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_openPendingPaths(widget.pendingPaths));
@@ -271,6 +286,119 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
     await _inspectPath(_history[_historyIndex], addToHistory: false);
   }
 
+  Future<void> _testSignCurrentMedia() async {
+    if (!_hasMedia || _isParsing || _isTestSigning) return;
+    final clip = _clip;
+    final initialOptions = await _loadWriteOptions();
+    if (!mounted) return;
+    final options = await showDialog<C2paWriteOptions>(
+      context: context,
+      builder: (_) => _C2paWriteTestDialog(
+        initialOptions: initialOptions,
+        onOptionsChanged: _rememberWriteOptions,
+      ),
+    );
+    await _writeOptionsSaveQueue;
+    if (options == null || !mounted) return;
+
+    var outputPath = clip.path;
+    try {
+      if (options.createNewFile) {
+        final destinationPicker =
+            widget.testSignDestinationPicker ?? _pickTestSignDestination;
+        final selectedPath = await destinationPicker(clip, options.mode);
+        if (selectedPath == null || !mounted) return;
+        if (p.equals(p.absolute(selectedPath), p.absolute(clip.path))) {
+          _showErrorToast(
+            'Choose a different output file, or turn off Create new file.',
+          );
+          return;
+        }
+        outputPath = selectedPath;
+      }
+    } catch (error) {
+      _showErrorToast('$error');
+      return;
+    }
+    setState(() => _isTestSigning = true);
+    try {
+      final writer = widget.testWriter ?? const C2paTestSignService().write;
+      await writer(clip, outputPath, options.mode);
+      if (!mounted) return;
+      await _inspectPath(
+        outputPath,
+        addToHistory: !p.equals(
+          p.absolute(outputPath),
+          p.absolute(clip.path),
+        ),
+      );
+    } catch (error) {
+      _showErrorToast('$error');
+    } finally {
+      if (mounted) setState(() => _isTestSigning = false);
+    }
+  }
+
+  Future<C2paWriteOptions> _loadWriteOptions() async {
+    final cached = _lastWriteOptions;
+    if (cached != null) return cached;
+    try {
+      final options = await _resolvedWriteOptionsStore.load();
+      _lastWriteOptions = options;
+      return options;
+    } catch (error) {
+      debugPrint('Unable to load C2PA write preferences: $error');
+      return const C2paWriteOptions(
+        mode: C2paWriteMode.add,
+        createNewFile: true,
+      );
+    }
+  }
+
+  void _rememberWriteOptions(C2paWriteOptions options) {
+    _lastWriteOptions = options;
+    _writeOptionsSaveQueue = _writeOptionsSaveQueue.then(
+      (_) => _saveWriteOptions(options),
+    );
+  }
+
+  Future<void> _saveWriteOptions(C2paWriteOptions options) async {
+    try {
+      await _resolvedWriteOptionsStore.save(options);
+    } catch (error) {
+      debugPrint('Unable to save C2PA write preferences: $error');
+    }
+  }
+
+  C2paWriteOptionsStore get _resolvedWriteOptionsStore {
+    return _writeOptionsStore ??= SharedPreferencesC2paWriteOptionsStore();
+  }
+
+  Future<String?> _pickTestSignDestination(
+    VideoClipInfo clip,
+    C2paWriteMode mode,
+  ) async {
+    final extension = p.extension(clip.path).toLowerCase();
+    final suffix = switch (mode) {
+      C2paWriteMode.add => 'c2pa_added',
+      C2paWriteMode.replace => 'c2pa_replaced',
+      C2paWriteMode.remove => 'c2pa_removed',
+    };
+    final location = await getSaveLocation(
+      acceptedTypeGroups: <XTypeGroup>[
+        XTypeGroup(
+          label: '${extension.substring(1).toUpperCase()} media',
+          extensions: <String>[extension.substring(1)],
+        ),
+      ],
+      initialDirectory: p.dirname(clip.path),
+      suggestedName:
+          '${p.basenameWithoutExtension(clip.path)}_$suffix$extension',
+      confirmButtonText: 'Export',
+    );
+    return location?.path;
+  }
+
   Future<void> _inspectPath(String path, {bool addToHistory = true}) async {
     if (!_isSupportedMediaPath(path)) {
       _showErrorToast('No supported media file was provided.');
@@ -334,6 +462,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       _C2paPageHeader(
                         clip: _hasMedia ? _clip : null,
                         onOpen: () => unawaited(_pickMedia()),
+                        onTestSign: () => unawaited(_testSignCurrentMedia()),
+                        canTestSign:
+                            _hasMedia && !_isParsing && !_isTestSigning,
+                        isTestSigning: _isTestSigning,
                         onPrev: () => unawaited(_navigatePrev()),
                         onNext: () => unawaited(_navigateNext()),
                         canGoPrev: _canGoPrev,
@@ -506,10 +638,132 @@ class _C2paTab extends StatelessWidget {
   }
 }
 
+class _C2paWriteTestDialog extends StatefulWidget {
+  const _C2paWriteTestDialog({
+    required this.initialOptions,
+    required this.onOptionsChanged,
+  });
+
+  final C2paWriteOptions initialOptions;
+  final ValueChanged<C2paWriteOptions> onOptionsChanged;
+
+  @override
+  State<_C2paWriteTestDialog> createState() => _C2paWriteTestDialogState();
+}
+
+class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
+  late C2paWriteMode _mode;
+  late bool _createNewFile;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.initialOptions.mode;
+    _createNewFile = widget.initialOptions.createNewFile;
+  }
+
+  void _updateOptions({C2paWriteMode? mode, bool? createNewFile}) {
+    setState(() {
+      _mode = mode ?? _mode;
+      _createNewFile = createNewFile ?? _createNewFile;
+    });
+    widget.onOptionsChanged(
+      C2paWriteOptions(mode: _mode, createNewFile: _createNewFile),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const ValueKey<String>('c2pa-write-test-dialog'),
+      title: const Text('C2PA write test'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              '這是 C2PA write 功能的測試工具，請選擇要套用到目前媒體的操作。',
+            ),
+            const SizedBox(height: 12),
+            RadioGroup<C2paWriteMode>(
+              groupValue: _mode,
+              onChanged: (value) {
+                if (value != null) _updateOptions(mode: value);
+              },
+              child: const Column(
+                children: <Widget>[
+                  RadioListTile<C2paWriteMode>(
+                    key: ValueKey<String>('c2pa-write-add'),
+                    value: C2paWriteMode.add,
+                    title: Text('增加 C2PA'),
+                    subtitle: Text('保留舊的 C2PA，新增一層測試簽章'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<C2paWriteMode>(
+                    key: ValueKey<String>('c2pa-write-replace'),
+                    value: C2paWriteMode.replace,
+                    title: Text('覆蓋 C2PA'),
+                    subtitle: Text('不保留舊的 C2PA，只寫入新的測試簽章'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<C2paWriteMode>(
+                    key: ValueKey<String>('c2pa-write-remove'),
+                    value: C2paWriteMode.remove,
+                    title: Text('移除 C2PA'),
+                    subtitle: Text('輸出不含 Content Credentials 的媒體'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            CheckboxListTile(
+              key: const ValueKey<String>('c2pa-create-new-file'),
+              value: _createNewFile,
+              onChanged: (value) {
+                _updateOptions(createNewFile: value ?? false);
+              },
+              title: const Text('Create new file'),
+              subtitle: Text(
+                _createNewFile
+                    ? '選擇另一個輸出位置，保留原始檔案'
+                    : '直接修改目前檔案',
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey<String>('run-c2pa-write-test'),
+          onPressed: () => Navigator.of(context).pop(
+            C2paWriteOptions(
+              mode: _mode,
+              createNewFile: _createNewFile,
+            ),
+          ),
+          child: const Text('Run'),
+        ),
+      ],
+    );
+  }
+}
+
 class _C2paPageHeader extends StatelessWidget {
   const _C2paPageHeader({
     required this.clip,
     required this.onOpen,
+    required this.onTestSign,
+    required this.canTestSign,
+    required this.isTestSigning,
     required this.onPrev,
     required this.onNext,
     required this.canGoPrev,
@@ -521,6 +775,9 @@ class _C2paPageHeader extends StatelessWidget {
 
   final VideoClipInfo? clip;
   final VoidCallback onOpen;
+  final VoidCallback onTestSign;
+  final bool canTestSign;
+  final bool isTestSigning;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final bool canGoPrev;
@@ -550,15 +807,13 @@ class _C2paPageHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Text(
-                      'Content Credentials',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Content Credentials',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 if (versionLabel.isNotEmpty)
                   Tooltip(
@@ -610,6 +865,17 @@ class _C2paPageHeader extends StatelessWidget {
           ),
           if (status != null) _C2paStatusPill(status: status),
           const SizedBox(width: 6),
+          IconButton(
+            key: const ValueKey<String>('test-sign-media'),
+            tooltip: 'Test sign current media',
+            onPressed: canTestSign ? onTestSign : null,
+            icon: isTestSigning
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.draw_outlined),
+          ),
           IconButton(
             tooltip: 'Previous file',
             onPressed: canGoPrev ? onPrev : null,
