@@ -34,6 +34,24 @@ class MobileC2paService {
   // Read
   // ---------------------------------------------------------------------------
 
+  /// Reads the manifest JSON and writes thumbnail resources to [outputDir]
+  /// using the same directory structure as c2patool, so _resourcePathFor can resolve them.
+  /// Returns the manifest JSON string, or null if the file has no C2PA data.
+  static Future<String?> readManifestWithResources(
+    String filePath,
+    String outputDir,
+  ) async {
+    if (!isSupportedPlatform) return null;
+    try {
+      return await _channel.invokeMethod<String>('readManifestWithResources', {
+        'sourcePath': filePath,
+        'outputDir': outputDir,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Returns the raw manifest JSON string, or null if the file has no C2PA data.
   static Future<String?> readManifestJson(String filePath) async {
     if (!isSupportedPlatform) return null;
@@ -69,9 +87,25 @@ class MobileC2paService {
       'mimeType': mimeType,
       'certPem': certPem,
       'keyPem': keyPem,
-      'title': p.basename(outputPath),
+      'title': 'pcc asset',
       'mode': mode.name,
     });
+  }
+
+  /// Returns a JPEG thumbnail for the media file at [filePath], or null on failure.
+  /// Backed by the native thumbnailForMedia method (AVFoundation for video,
+  /// CGImageSource for images).
+  static Future<Uint8List?> generateThumbnail(String filePath) async {
+    if (!isSupportedPlatform) return null;
+    try {
+      final result = await _channel.invokeMethod<Uint8List>(
+        'thumbnailForMedia',
+        <String, String>{'path': filePath},
+      );
+      return result;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Removes all C2PA manifests from [sourcePath] and writes the stripped
@@ -84,11 +118,9 @@ class MobileC2paService {
     if (!isSupportedPlatform) {
       throw UnsupportedError('removeC2pa is only supported on mobile platforms.');
     }
-    final mimeType = _mimeType(sourcePath);
     await _channel.invokeMethod<void>('removeFile', {
       'sourcePath': sourcePath,
       'outputPath': outputPath,
-      'mimeType': mimeType,
     });
   }
 

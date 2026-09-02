@@ -1,3 +1,4 @@
+import AVFoundation
 import C2PA
 import Flutter
 import Photos
@@ -60,8 +61,12 @@ final class C2paNativeHandler: NSObject {
     switch call.method {
     case "signFile":
       signFile(args: args, result: result)
+    case "thumbnailForMedia":
+      thumbnailForMedia(args: args, result: result)
     case "readManifest":
       readManifest(args: args, result: result)
+    case "readManifestWithResources":
+      readManifestWithResources(args: args, result: result)
     case "removeFile":
       removeFile(args: args, result: result)
     case "saveToPhotoLibrary":
@@ -126,7 +131,19 @@ final class C2paNativeHandler: NSObject {
       return
     }
 
-    let manifestJSON = buildManifestJSON(title: title, mimeType: mimeType)
+    // Generate a thumbnail and write it to a temp file so it can be streamed
+    // into the manifest as a claim thumbnail resource.
+    let thumbURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("c2pa_thumb_\(UUID().uuidString).jpg")
+    let hasThumbnail: Bool
+    if let thumbData = generateThumbnailData(for: URL(fileURLWithPath: sourcePath)) {
+      hasThumbnail = (try? thumbData.write(to: thumbURL)) != nil
+    } else {
+      hasThumbnail = false
+    }
+    defer { try? FileManager.default.removeItem(at: thumbURL) }
+
+    let manifestJSON = buildManifestJSON(title: title, mimeType: mimeType, hasThumbnail: hasThumbnail)
 
     do {
       let signerInfo = SignerInfo(
@@ -172,6 +189,10 @@ final class C2paNativeHandler: NSObject {
         try builder.setIntent(.create(.digitalCreation))
       default:
         throw NativeC2paError.unsupportedWriteMode(mode)
+      }
+      if hasThumbnail {
+        let thumbStream = try Stream(readFrom: thumbURL)
+        try builder.addResource(uri: "thumbnail", stream: thumbStream)
       }
       _ = try builder.sign(
         format: mimeType,
@@ -377,6 +398,74 @@ final class C2paNativeHandler: NSObject {
     }
   }
 
+  // MARK: - readManifestWithResources
+
+  /// Reads the manifest JSON and writes thumbnails to outputDir using the same
+  /// directory structure as c2patool --output, so _resourcePathFor can resolve them.
+  /// Identifier pattern: self#jumbf=/c2pa/<label>/<resource> →
+  /// outputDir/<label with : → _>/<resource>
+  private func readManifestWithResources(args: [String: Any], result: @escaping FlutterResult) {
+    guard
+      let sourcePath = args["sourcePath"] as? String,
+      let outputDir  = args["outputDir"]  as? String
+    else {
+      complete(result, with: nil)
+      return
+    }
+    let sourceURL = URL(fileURLWithPath: sourcePath)
+    guard let format = mimeType(for: sourceURL) else {
+      complete(result, with: nil)
+      return
+    }
+    do {
+      let stream  = try Stream(readFrom: sourceURL)
+      let reader  = try Reader(format: format, stream: stream)
+      let jsonStr = try reader.json()
+
+      // Parse JSON to find manifest labels + thumbnail identifiers, then write
+      // generated thumbnails to the expected paths so the Flutter layer can load them.
+      if let jsonData = jsonStr.data(using: .utf8),
+         let root = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+         let manifests = root["manifests"] as? [String: Any] {
+
+        // Generate thumbnail once (lazily) and reuse across manifests.
+        var thumbData: Data? = nil
+
+        for (_, manifestValue) in manifests {
+          guard let manifest = manifestValue as? [String: Any],
+                let thumbnail = manifest["thumbnail"] as? [String: Any],
+                let identifier = thumbnail["identifier"] as? String else { continue }
+
+          let prefix = "self#jumbf=/c2pa/"
+          guard identifier.hasPrefix(prefix) else { continue }
+
+          let remaining = String(identifier.dropFirst(prefix.count))
+          let segments  = remaining.components(separatedBy: "/")
+          guard segments.count >= 2 else { continue }
+
+          let manifestDirName = segments[0].replacingOccurrences(of: ":", with: "_")
+          let resourceName    = segments.dropFirst().joined(separator: "/")
+
+          let resourceURL = URL(fileURLWithPath: outputDir)
+            .appendingPathComponent(manifestDirName)
+            .appendingPathComponent(resourceName)
+
+          try? FileManager.default.createDirectory(
+            at: resourceURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+          )
+          // Generate thumbnail on first manifest that needs one, then reuse.
+          if thumbData == nil { thumbData = generateThumbnailData(for: sourceURL) }
+          if let data = thumbData { try? data.write(to: resourceURL) }
+        }
+      }
+
+      complete(result, with: jsonStr)
+    } catch {
+      complete(result, with: nil)
+    }
+  }
+
   // MARK: - readManifest
 
   private func readManifest(args: [String: Any], result: @escaping FlutterResult) {
@@ -452,9 +541,52 @@ final class C2paNativeHandler: NSObject {
     }
   }
 
+  // MARK: - Thumbnail
+
+  /// Returns JPEG thumbnail data for the given media URL.
+  /// Uses AVFoundation for video and CGImageSource for images.
+  private func generateThumbnailData(for url: URL) -> Data? {
+    if isVideo(url) {
+      let asset = AVAsset(url: url)
+      let generator = AVAssetImageGenerator(asset: asset)
+      generator.appliesPreferredTrackTransform = true
+      generator.maximumSize = CGSize(width: 512, height: 512)
+      guard let cgImage = try? generator.copyCGImage(at: .zero, actualTime: nil) else {
+        return nil
+      }
+      return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+    } else {
+      guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        return nil
+      }
+      let opts: [CFString: Any] = [
+        kCGImageSourceThumbnailMaxPixelSize: 512,
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+      ]
+      guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, opts as CFDictionary) else {
+        return nil
+      }
+      return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+    }
+  }
+
+  private func thumbnailForMedia(args: [String: Any], result: @escaping FlutterResult) {
+    guard let path = args["path"] as? String else {
+      complete(result, with: nil)
+      return
+    }
+    let url = URL(fileURLWithPath: path)
+    if let data = generateThumbnailData(for: url) {
+      complete(result, with: FlutterStandardTypedData(bytes: data))
+    } else {
+      complete(result, with: nil)
+    }
+  }
+
   // MARK: - Manifest JSON builder
 
-  private func buildManifestJSON(title: String, mimeType: String) -> String {
+  private func buildManifestJSON(title: String, mimeType: String, hasThumbnail: Bool = false) -> String {
     // Escape title for safe JSON embedding
     let safeTitle = title
       .replacingOccurrences(of: "\\", with: "\\\\")
@@ -478,7 +610,7 @@ final class C2paNativeHandler: NSObject {
             ]
           }
         }
-      ]
+      ]\(hasThumbnail ? #","thumbnail":{"format":"image/jpeg","identifier":"thumbnail"}"# : "")
     }
     """
   }

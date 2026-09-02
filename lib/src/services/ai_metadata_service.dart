@@ -42,15 +42,28 @@ class AiMetadataService {
 
   Future<AiMediaMetadata> probeC2pa(String filePath) async {
     if (MobileC2paService.isSupportedPlatform) {
+      String? temporaryRootPath;
       try {
-        final source = await MobileC2paService.readManifestJson(filePath);
+        final temporaryRoot = await Directory.systemTemp.createTemp(
+          'c2pa_viewer_report_',
+        );
+        temporaryRootPath = temporaryRoot.path;
+        _temporaryResourceDirectories.add(temporaryRoot.path);
+        final source = await MobileC2paService.readManifestWithResources(
+          filePath,
+          temporaryRoot.path,
+        );
         if (source == null) {
+          // Temp dir is already tracked in _temporaryResourceDirectories —
+          // cleanupExtractedResources() will handle it at the appropriate time.
           return const AiMediaMetadata(c2paStatus: C2paStatus.absent);
         }
-        return parseC2paJson(source);
+        return parseC2paJson(source, resourceDirectory: temporaryRoot.path);
       } on FormatException {
+        if (temporaryRootPath != null) _discardTemporaryResources(temporaryRootPath);
         return const AiMediaMetadata(c2paStatus: C2paStatus.invalid);
       } on Object {
+        if (temporaryRootPath != null) _discardTemporaryResources(temporaryRootPath);
         return const AiMediaMetadata(c2paStatus: C2paStatus.unknown);
       }
     }

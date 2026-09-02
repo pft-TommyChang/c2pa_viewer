@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models.dart';
 import 'ai_metadata_service.dart';
+import 'mobile_c2pa_service.dart';
 
 class MediaInspectionService {
   const MediaInspectionService({
@@ -20,6 +21,11 @@ class MediaInspectionService {
   final AiMetadataService aiMetadataService;
 
   static Future<Uint8List?> thumbnail(String path) async {
+    // On mobile, the media_probe channel has no iOS/Android implementation —
+    // delegate to the c2pa_native channel instead.
+    if (Platform.isIOS || Platform.isAndroid) {
+      return MobileC2paService.generateThumbnail(path);
+    }
     try {
       final result = await _mediaProbeChannel.invokeMethod<Uint8List>(
         'thumbnailForMedia',

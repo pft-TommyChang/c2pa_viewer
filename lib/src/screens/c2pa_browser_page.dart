@@ -243,45 +243,11 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   Future<void> _pickMedia() async {
     final mobile = Platform.isIOS || Platform.isAndroid;
     if (mobile) {
-      // Show bottom sheet to let user choose source
-      final source = await showModalBottomSheet<_MediaSource>(
-        context: context,
-        builder: (ctx) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.folder_outlined),
-                title: const Text('Files'),
-                onTap: () => Navigator.of(ctx).pop(_MediaSource.files),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Camera Roll'),
-                onTap: () => Navigator.of(ctx).pop(_MediaSource.cameraRoll),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (source == null) return;
-
-      if (source == _MediaSource.cameraRoll) {
-        // Use native PHPickerViewController via c2pa_native channel so the
-        // original binary is returned intact (ImagePicker re-encodes and strips C2PA).
-        final originalPath = await MobileC2paService.pickOriginalMedia();
-        if (originalPath != null) await _inspectPath(originalPath);
-      } else {
-        final file = await openFile(
-          acceptedTypeGroups: const <XTypeGroup>[
-            XTypeGroup(
-              label: 'Photos',
-              uniformTypeIdentifiers: <String>['public.image'],
-            ),
-          ],
-        );
-        if (file != null) await _inspectPath(file.path);
-      }
+      // On mobile, always open Camera Roll via PHPickerViewController so the
+      // original binary (including embedded C2PA) is returned intact.
+      // ImagePicker re-encodes and strips C2PA, so we use the native channel.
+      final originalPath = await MobileC2paService.pickOriginalMedia();
+      if (originalPath != null) await _inspectPath(originalPath);
     } else {
       final file = await openFile(
         acceptedTypeGroups: const <XTypeGroup>[
@@ -2304,7 +2270,7 @@ class _C2paTreeThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // No AspectRatio – the parent Expanded/Stack controls height.
-    // BoxFit.cover fills the space cleanly without overflow on any platform.
+    // BoxFit.contain shows the full image without cropping (center inside).
     return ClipRRect(
       key: const ValueKey<String>('c2pa-tree-thumbnail'),
       borderRadius: BorderRadius.circular(10),
@@ -2707,4 +2673,3 @@ class _ZoomSep extends StatelessWidget {
   }
 }
 
-enum _MediaSource { files, cameraRoll }
