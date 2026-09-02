@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:c2pa_flutter/c2pa_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,8 +9,11 @@ import 'src/screens/c2pa_browser_page.dart';
 import 'src/services/ai_metadata_service.dart';
 import 'src/services/media_inspection_service.dart';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isIOS || Platform.isAndroid) {
+    await C2pa.init();
+  }
   final initialPath = arguments
       .where((argument) => !argument.startsWith('--'))
       .firstOrNull;
@@ -66,7 +71,11 @@ class _ViewerHomeState extends State<_ViewerHome> {
         : [];
     _mediaOpenChannel.setMethodCallHandler(_handleMediaOpenMethodCall);
     unawaited(_consumePendingMediaFiles());
-    unawaited(_inspectionService.aiMetadataService.refreshTrustListIfNeeded());
+    if (!Platform.isIOS && !Platform.isAndroid) {
+      unawaited(
+        _inspectionService.aiMetadataService.refreshTrustListIfNeeded(),
+      );
+    }
   }
 
   @override

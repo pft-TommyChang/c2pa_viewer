@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../models.dart';
 import 'ai_metadata_service.dart';
 import 'media_inspection_service.dart';
+import 'mobile_c2pa_service.dart';
 
 typedef C2paSignProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> arguments);
@@ -79,6 +80,19 @@ class C2paTestSignService {
     String outputPath,
     C2paWriteMode mode,
   ) async {
+    if (MobileC2paService.isSupportedPlatform) {
+      if (mode != C2paWriteMode.add) {
+        throw const C2paTestSignException(
+          'c2pa_flutter mobile currently supports adding a signed manifest only.',
+        );
+      }
+      try {
+        await MobileC2paService.signImage(clip.path, outputPath);
+      } on Object catch (error) {
+        throw C2paTestSignException('Could not sign this image: $error');
+      }
+      return;
+    }
     final executable = mode == C2paWriteMode.remove ? null : _toolLocator();
     if (mode != C2paWriteMode.remove && executable == null) {
       throw const C2paTestSignException(

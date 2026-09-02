@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -239,26 +240,34 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   }
 
   Future<void> _pickMedia() async {
+    final mobile = Platform.isIOS || Platform.isAndroid;
     final file = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[
-        XTypeGroup(
-          label: 'Photos and videos',
-          extensions: <String>[
-            'mp4',
-            'mov',
-            'm4v',
-            'avi',
-            'mkv',
-            'webm',
-            'jpg',
-            'jpeg',
-            'png',
-            'webp',
-            'heic',
-            'heif',
-          ],
-        ),
-      ],
+      acceptedTypeGroups: mobile
+          ? const <XTypeGroup>[
+              XTypeGroup(
+                label: 'Photos',
+                uniformTypeIdentifiers: <String>['public.image'],
+              ),
+            ]
+          : const <XTypeGroup>[
+              XTypeGroup(
+                label: 'Photos and videos',
+                extensions: <String>[
+                  'mp4',
+                  'mov',
+                  'm4v',
+                  'avi',
+                  'mkv',
+                  'webm',
+                  'jpg',
+                  'jpeg',
+                  'png',
+                  'webp',
+                  'heic',
+                  'heif',
+                ],
+              ),
+            ],
     );
     if (file != null) await _inspectPath(file.path);
   }
@@ -290,13 +299,17 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   Future<void> _testSignCurrentMedia() async {
     if (!_hasMedia || _isParsing || _isTestSigning) return;
     final clip = _clip;
-    final initialOptions = await _loadWriteOptions();
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+    final initialOptions = isMobile
+        ? const C2paWriteOptions(mode: C2paWriteMode.add, createNewFile: true)
+        : await _loadWriteOptions();
     if (!mounted) return;
     final options = await showDialog<C2paWriteOptions>(
       context: context,
       builder: (_) => _C2paWriteTestDialog(
         initialOptions: initialOptions,
         onOptionsChanged: _rememberWriteOptions,
+        mobileAddOnly: isMobile,
       ),
     );
     await _writeOptionsSaveQueue;
@@ -304,7 +317,13 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
 
     var outputPath = clip.path;
     try {
-      if (options.createNewFile) {
+      if (isMobile) {
+        final extension = p.extension(clip.path).toLowerCase();
+        outputPath = p.join(
+          Directory.systemTemp.path,
+          '${p.basenameWithoutExtension(clip.path)}_c2pa_${DateTime.now().millisecondsSinceEpoch}$extension',
+        );
+      } else if (options.createNewFile) {
         final destinationPicker =
             widget.testSignDestinationPicker ?? _pickTestSignDestination;
         final selectedPath = await destinationPicker(clip, options.mode);
@@ -328,11 +347,20 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
       if (!mounted) return;
       await _inspectPath(
         outputPath,
-        addToHistory: !p.equals(
-          p.absolute(outputPath),
-          p.absolute(clip.path),
-        ),
+        addToHistory: !p.equals(p.absolute(outputPath), p.absolute(clip.path)),
       );
+      if (isMobile && mounted) {
+        final box = context.findRenderObject() as RenderBox?;
+        await SharePlus.instance.share(
+          ShareParams(
+            files: <XFile>[XFile(outputPath)],
+            title: 'Export signed Content Credentials',
+            sharePositionOrigin: box == null
+                ? null
+                : box.localToGlobal(Offset.zero) & box.size,
+          ),
+        );
+      }
     } catch (error) {
       _showErrorToast('$error');
     } finally {
@@ -465,7 +493,20 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                         onOpen: () => unawaited(_pickMedia()),
                         onTestSign: () => unawaited(_testSignCurrentMedia()),
                         canTestSign:
-                            _hasMedia && !_isParsing && !_isTestSigning,
+                            _hasMedia &&
+                            !_isParsing &&
+                            !_isTestSigning &&
+                            (!(Platform.isIOS || Platform.isAndroid) ||
+                                const <String>{
+                                  '.jpg',
+                                  '.jpeg',
+                                  '.png',
+                                  '.webp',
+                                  '.tif',
+                                  '.tiff',
+                                }.contains(
+                                  p.extension(_clip.path).toLowerCase(),
+                                )),
                         isTestSigning: _isTestSigning,
                         onPrev: () => unawaited(_navigatePrev()),
                         onNext: () => unawaited(_navigateNext()),
@@ -506,10 +547,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                                     ),
                                     labelColor: Color(0xFF171A21),
                                     unselectedLabelColor: _c2paMutedText,
-                                    overlayColor:
-                                        WidgetStatePropertyAll<Color>(
-                                          Color(0x08697180),
-                                        ),
+                                    overlayColor: WidgetStatePropertyAll<Color>(
+                                      Color(0x08697180),
+                                    ),
                                     labelStyle: TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -525,6 +565,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                                       _C2paTab(
                                         icon: Icons.fact_check_outlined,
                                         label: 'Checks & JSON',
+                                        mobileLabel: 'Checks',
                                       ),
                                     ],
                                   ),
@@ -622,13 +663,23 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
 }
 
 class _C2paTab extends StatelessWidget {
-  const _C2paTab({required this.icon, required this.label});
+  const _C2paTab({
+    required this.icon,
+    required this.label,
+    this.mobileLabel,
+  });
 
   final IconData icon;
   final String label;
+  // Shorter label shown on mobile (no icon).
+  final String? mobileLabel;
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+    if (isMobile) {
+      return Tab(text: mobileLabel ?? label);
+    }
     return Tab(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -646,10 +697,12 @@ class _C2paWriteTestDialog extends StatefulWidget {
   const _C2paWriteTestDialog({
     required this.initialOptions,
     required this.onOptionsChanged,
+    this.mobileAddOnly = false,
   });
 
   final C2paWriteOptions initialOptions;
   final ValueChanged<C2paWriteOptions> onOptionsChanged;
+  final bool mobileAddOnly;
 
   @override
   State<_C2paWriteTestDialog> createState() => _C2paWriteTestDialogState();
@@ -687,57 +740,60 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              '這是 C2PA write 功能的測試工具，請選擇要套用到目前媒體的操作。',
-            ),
+            const Text('這是 C2PA write 功能的測試工具，請選擇要套用到目前媒體的操作。'),
+            if (widget.mobileAddOnly) ...const <Widget>[
+              SizedBox(height: 8),
+              Text('iOS 會用 c2pa_flutter 新增簽章，完成後開啟分享面板。'),
+            ],
             const SizedBox(height: 12),
             RadioGroup<C2paWriteMode>(
               groupValue: _mode,
               onChanged: (value) {
                 if (value != null) _updateOptions(mode: value);
               },
-              child: const Column(
+              child: Column(
                 children: <Widget>[
-                  RadioListTile<C2paWriteMode>(
+                  const RadioListTile<C2paWriteMode>(
                     key: ValueKey<String>('c2pa-write-add'),
                     value: C2paWriteMode.add,
                     title: Text('增加 C2PA'),
                     subtitle: Text('保留舊的 C2PA，新增一層測試簽章'),
                     contentPadding: EdgeInsets.zero,
                   ),
-                  RadioListTile<C2paWriteMode>(
-                    key: ValueKey<String>('c2pa-write-replace'),
-                    value: C2paWriteMode.replace,
-                    title: Text('覆蓋 C2PA'),
-                    subtitle: Text('不保留舊的 C2PA，只寫入新的測試簽章'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<C2paWriteMode>(
-                    key: ValueKey<String>('c2pa-write-remove'),
-                    value: C2paWriteMode.remove,
-                    title: Text('移除 C2PA'),
-                    subtitle: Text('輸出不含 Content Credentials 的媒體'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                  if (!widget.mobileAddOnly) ...<Widget>[
+                    const RadioListTile<C2paWriteMode>(
+                      key: ValueKey<String>('c2pa-write-replace'),
+                      value: C2paWriteMode.replace,
+                      title: Text('覆蓋 C2PA'),
+                      subtitle: Text('不保留舊的 C2PA，只寫入新的測試簽章'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const RadioListTile<C2paWriteMode>(
+                      key: ValueKey<String>('c2pa-write-remove'),
+                      value: C2paWriteMode.remove,
+                      title: Text('移除 C2PA'),
+                      subtitle: Text('輸出不含 Content Credentials 的媒體'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
                 ],
               ),
             ),
             const Divider(),
-            CheckboxListTile(
-              key: const ValueKey<String>('c2pa-create-new-file'),
-              value: _createNewFile,
-              onChanged: (value) {
-                _updateOptions(createNewFile: value ?? false);
-              },
-              title: const Text('Create new file'),
-              subtitle: Text(
-                _createNewFile
-                    ? '選擇另一個輸出位置，保留原始檔案'
-                    : '直接修改目前檔案',
+            if (!widget.mobileAddOnly)
+              CheckboxListTile(
+                key: const ValueKey<String>('c2pa-create-new-file'),
+                value: _createNewFile,
+                onChanged: (value) {
+                  _updateOptions(createNewFile: value ?? false);
+                },
+                title: const Text('Create new file'),
+                subtitle: Text(
+                  _createNewFile ? '選擇另一個輸出位置，保留原始檔案' : '直接修改目前檔案',
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
               ),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
           ],
         ),
       ),
@@ -748,12 +804,9 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
         ),
         FilledButton(
           key: const ValueKey<String>('run-c2pa-write-test'),
-          onPressed: () => Navigator.of(context).pop(
-            C2paWriteOptions(
-              mode: _mode,
-              createNewFile: _createNewFile,
-            ),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pop(C2paWriteOptions(mode: _mode, createNewFile: _createNewFile)),
           child: const Text('Run'),
         ),
       ],
@@ -793,16 +846,22 @@ class _C2paPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = clip?.aiMetadata.c2paStatus;
+    final compact = MediaQuery.sizeOf(context).width < 600;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 10, _c2paSectionGap),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 20,
+        12,
+        compact ? 4 : 10,
+        _c2paSectionGap,
+      ),
       child: Row(
         children: <Widget>[
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.asset(
               'assets/app_icon_1024.png',
-              width: 34,
-              height: 34,
+              width: compact ? 30 : 34,
+              height: compact ? 30 : 34,
               fit: BoxFit.cover,
             ),
           ),
@@ -819,7 +878,7 @@ class _C2paPageHeader extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (versionLabel.isNotEmpty)
+                if (!compact && versionLabel.isNotEmpty)
                   Tooltip(
                     message: availableUpdate != null
                         ? 'Version ${availableUpdate!.version} available — click to open'
@@ -855,7 +914,7 @@ class _C2paPageHeader extends StatelessWidget {
                       ),
                     ),
                   )
-                else if (clip == null)
+                else if (!compact && clip == null)
                   Text(
                     'Drop a media file anywhere on this page',
                     maxLines: 1,
@@ -867,7 +926,7 @@ class _C2paPageHeader extends StatelessWidget {
               ],
             ),
           ),
-          if (status != null) _C2paStatusPill(status: status),
+          if (!compact && status != null) _C2paStatusPill(status: status),
           const SizedBox(width: 6),
           IconButton(
             key: const ValueKey<String>('test-sign-media'),
@@ -880,16 +939,18 @@ class _C2paPageHeader extends StatelessWidget {
                   )
                 : const Icon(Icons.draw_outlined),
           ),
-          IconButton(
-            tooltip: 'Previous file',
-            onPressed: canGoPrev ? onPrev : null,
-            icon: const Icon(Icons.chevron_left),
-          ),
-          IconButton(
-            tooltip: 'Next file',
-            onPressed: canGoNext ? onNext : null,
-            icon: const Icon(Icons.chevron_right),
-          ),
+          if (!compact) ...<Widget>[
+            IconButton(
+              tooltip: 'Previous file',
+              onPressed: canGoPrev ? onPrev : null,
+              icon: const Icon(Icons.chevron_left),
+            ),
+            IconButton(
+              tooltip: 'Next file',
+              onPressed: canGoNext ? onNext : null,
+              icon: const Icon(Icons.chevron_right),
+            ),
+          ],
           IconButton(
             key: const ValueKey<String>('open-media-file'),
             tooltip: 'Open media',
@@ -918,6 +979,7 @@ class _C2paFileLocationBar extends StatelessWidget {
     final revealLabel = Platform.isWindows
         ? 'Show in File Explorer'
         : 'Reveal in Finder';
+    final canReveal = Platform.isWindows || Platform.isMacOS;
     return Container(
       key: const ValueKey<String>('c2pa-file-location'),
       margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -994,12 +1056,13 @@ class _C2paFileLocationBar extends StatelessWidget {
             },
             icon: const Icon(Icons.copy_outlined, size: 19),
           ),
-          IconButton(
-            key: const ValueKey<String>('reveal-media-file'),
-            tooltip: revealLabel,
-            onPressed: () => unawaited(_revealMediaFile(path)),
-            icon: const Icon(Icons.folder_open_outlined, size: 20),
-          ),
+          if (canReveal)
+            IconButton(
+              key: const ValueKey<String>('reveal-media-file'),
+              tooltip: revealLabel,
+              onPressed: () => unawaited(_revealMediaFile(path)),
+              icon: const Icon(Icons.folder_open_outlined, size: 20),
+            ),
         ],
       ),
     );
@@ -1007,11 +1070,7 @@ class _C2paFileLocationBar extends StatelessWidget {
 }
 
 class _C2paOverflowTooltipText extends StatelessWidget {
-  const _C2paOverflowTooltipText({
-    super.key,
-    required this.text,
-    this.style,
-  });
+  const _C2paOverflowTooltipText({super.key, required this.text, this.style});
 
   final String text;
   final TextStyle? style;
@@ -1083,7 +1142,9 @@ class _C2paDropPrompt extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Drop media to inspect Content Credentials',
+              Platform.isIOS || Platform.isAndroid
+                  ? 'Tap the folder button to inspect a photo'
+                  : 'Drop media to inspect Content Credentials',
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
@@ -1116,63 +1177,80 @@ class _C2paNoCredentialsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
-      children: <Widget>[
-        SizedBox(
-          height: 206,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+    // Shared info card widget used in both mobile and desktop layouts.
+    final infoCard = Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _c2paCardBorder),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+        children: <Widget>[
+          Row(
             children: <Widget>[
-              AspectRatio(
-                aspectRatio: 1.0,
-                child: _C2paPreviewCard(
-                  key: const ValueKey<String>('c2pa-no-cred-preview'),
-                  clip: clip,
-                ),
+              const Icon(
+                Icons.gpp_maybe_outlined,
+                size: 19,
+                color: _c2paMutedText,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              // Expanded prevents text overflow in both layouts.
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: _c2paCardBorder),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          const Icon(
-                            Icons.gpp_maybe_outlined,
-                            size: 19,
-                            color: _c2paMutedText,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'No Content Credentials',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '${p.basename(clip.path)} does not contain C2PA data.',
-                        style: const TextStyle(
-                          color: _c2paMutedText,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: Text(
+                  'No Content Credentials',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 10),
+          Text(
+            '${p.basename(clip.path)} does not contain C2PA data.',
+            style: const TextStyle(color: _c2paMutedText, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
+      children: <Widget>[
+        // Mobile: 4:3 full-width thumbnail then info card below (same pattern
+        // as _C2paOverview). Desktop: side-by-side row at fixed height.
+        if (isMobile) ...<Widget>[
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: _C2paPreviewCard(
+              key: const ValueKey<String>('c2pa-no-cred-preview'),
+              clip: clip,
+            ),
+          ),
+          const SizedBox(height: 12),
+          infoCard,
+        ] else
+          SizedBox(
+            height: 206,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  aspectRatio: 1.0,
+                  child: _C2paPreviewCard(
+                    key: const ValueKey<String>('c2pa-no-cred-preview'),
+                    clip: clip,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: infoCard),
+              ],
+            ),
+          ),
         const SizedBox(height: 24),
         AnimatedOpacity(
           key: const ValueKey<String>('c2pa-no-credentials-drop-prompt'),
@@ -1272,63 +1350,82 @@ class _C2paOverview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final manifest = report.activeManifest;
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+    // Reusable card widgets (keys must be stable across layouts).
+    // shrinkWrap required on mobile: cards live inside ListView (unbounded height).
+    final signerCard = _C2paInfoCard(
+      key: const ValueKey<String>('c2pa-overview-signer'),
+      title: 'Signer',
+      icon: Icons.draw_outlined,
+      rows: <(String, String?)>[
+        ('Issuer', manifest?.issuer ?? manifest?.commonName),
+        ('Algorithm', manifest?.algorithm),
+        ('Signed', manifest?.signedAt),
+        ('App or device', manifest?.claimGenerator),
+      ],
+      shrinkWrap: isMobile,
+    );
+    final manifestCard = _C2paInfoCard(
+      key: const ValueKey<String>('c2pa-overview-manifest'),
+      title: 'Manifest',
+      icon: Icons.description_outlined,
+      rows: <(String, String?)>[
+        ('Title', manifest?.title ?? p.basename(clip.path)),
+        (
+          'Format',
+          manifest?.format ??
+              shortMediaTypeLabel(clip.path, clip.mediaKind),
+        ),
+        (
+          'History',
+          '${report.manifests.length} manifest${report.manifests.length == 1 ? '' : 's'}',
+        ),
+        (
+          'Validation',
+          '${report.passedCheckCount} passed · ${report.failedCheckCount} failed',
+        ),
+      ],
+      shrinkWrap: isMobile,
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
       children: <Widget>[
-        SizedBox(
-          height: 206,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AspectRatio(
-                aspectRatio: 1.0,
-                child: _C2paPreviewCard(
-                  key: const ValueKey<String>('c2pa-overview-preview'),
-                  clip: clip,
-                  controller: controller,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _C2paInfoCard(
-                  key: const ValueKey<String>('c2pa-overview-signer'),
-                  title: 'Signer',
-                  icon: Icons.draw_outlined,
-                  rows: <(String, String?)>[
-                    ('Issuer', manifest?.issuer ?? manifest?.commonName),
-                    ('Algorithm', manifest?.algorithm),
-                    ('Signed', manifest?.signedAt),
-                    ('App or device', manifest?.claimGenerator),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _C2paInfoCard(
-                  key: const ValueKey<String>('c2pa-overview-manifest'),
-                  title: 'Manifest',
-                  icon: Icons.description_outlined,
-                  rows: <(String, String?)>[
-                    ('Title', manifest?.title ?? p.basename(clip.path)),
-                    (
-                      'Format',
-                      manifest?.format ??
-                          shortMediaTypeLabel(clip.path, clip.mediaKind),
-                    ),
-                    (
-                      'History',
-                      '${report.manifests.length} manifest${report.manifests.length == 1 ? '' : 's'}',
-                    ),
-                    (
-                      'Validation',
-                      '${report.passedCheckCount} passed · ${report.failedCheckCount} failed',
-                    ),
-                  ],
-                ),
-              ),
-            ],
+        // Mobile: thumbnail full-width 4:3, info cards stacked below.
+        // Desktop: side-by-side row (unchanged).
+        if (isMobile) ...<Widget>[
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: _C2paPreviewCard(
+              key: const ValueKey<String>('c2pa-overview-preview'),
+              clip: clip,
+              controller: controller,
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          signerCard,
+          const SizedBox(height: 12),
+          manifestCard,
+        ] else
+          SizedBox(
+            height: 206,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  aspectRatio: 1.0,
+                  child: _C2paPreviewCard(
+                    key: const ValueKey<String>('c2pa-overview-preview'),
+                    clip: clip,
+                    controller: controller,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: signerCard),
+                const SizedBox(width: 12),
+                Expanded(child: manifestCard),
+              ],
+            ),
+          ),
         const SizedBox(height: 18),
         Text(
           'Activity',
@@ -1445,11 +1542,68 @@ class _C2paInfoCard extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.rows,
+    // shrinkWrap: true when the card is inside an unbounded-height parent
+    // (e.g. ListView on mobile). Disables Expanded so the column sizes to
+    // its content instead of requiring a finite parent height.
+    this.shrinkWrap = false,
   });
 
   final String title;
   final IconData icon;
   final List<(String, String?)> rows;
+  final bool shrinkWrap;
+
+  List<Widget> _buildRows(bool compact) {
+    final visibleRows = rows.where((row) => row.$2 != null).toList();
+    return <Widget>[
+      for (int i = 0; i < visibleRows.length; i++) ...<Widget>[
+        if (i > 0) const SizedBox(height: 8),
+        if (compact)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(
+                    text: '${visibleRows[i].$1}: ',
+                    style: const TextStyle(
+                      color: _c2paMutedText,
+                      fontSize: 11,
+                    ),
+                  ),
+                  TextSpan(text: visibleRows[i].$2!),
+                ],
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
+                width: 94,
+                child: Text(
+                  visibleRows[i].$1,
+                  style: const TextStyle(
+                    color: _c2paMutedText,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  visibleRows[i].$2!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+      ],
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1462,6 +1616,7 @@ class _C2paInfoCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
         children: <Widget>[
           Row(
             children: <Widget>[
@@ -1471,63 +1626,30 @@ class _C2paInfoCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Expanded(
-            child: LayoutBuilder(
+          if (shrinkWrap)
+            // Unbounded context (mobile ListView): no Expanded, fixed spacing.
+            LayoutBuilder(
               builder: (context, constraints) {
-                final compact = constraints.maxWidth < 240;
                 return Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: rows
-                      .where((row) => row.$2 != null)
-                      .map(
-                        (row) => compact
-                            ? Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text.rich(
-                                  TextSpan(
-                                    children: <InlineSpan>[
-                                      TextSpan(
-                                        text: '${row.$1}: ',
-                                        style: const TextStyle(
-                                          color: _c2paMutedText,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                      TextSpan(text: row.$2!),
-                                    ],
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              )
-                            : Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  SizedBox(
-                                    width: 94,
-                                    child: Text(
-                                      row.$1,
-                                      style: const TextStyle(
-                                        color: _c2paMutedText,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      row.$2!,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      )
-                      .toList(growable: false),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _buildRows(constraints.maxWidth < 240),
                 );
               },
+            )
+          else
+            // Bounded context (desktop row): fill remaining height with spaceEvenly.
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 240;
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: _buildRows(compact),
+                  );
+                },
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1820,12 +1942,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
       children: <Widget>[
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              12,
-              _c2paSectionGap,
-              12,
-              12,
-            ),
+            padding: const EdgeInsets.fromLTRB(12, _c2paSectionGap, 12, 12),
             child: DecoratedBox(
               key: const ValueKey<String>('c2pa-history-panel'),
               decoration: BoxDecoration(
@@ -1843,8 +1960,8 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                       widestLevel * 264.0,
                     );
                     final treeSize = Size(treeWidth, treeHeight);
-                    final layoutChanged = _viewportSize != viewportSize ||
-                        _treeSize != treeSize;
+                    final layoutChanged =
+                        _viewportSize != viewportSize || _treeSize != treeSize;
                     _viewportSize = viewportSize;
                     _treeSize = treeSize;
                     if (_zoomMode == _ZoomMode.fit && layoutChanged) {
@@ -1880,8 +1997,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                                   setState(() => _zoomMode = _ZoomMode.free);
                                 }
                               },
-                              onInteractionEnd: (_) =>
-                                  _setCanvasGrabbed(false),
+                              onInteractionEnd: (_) => _setCanvasGrabbed(false),
                               child: Padding(
                                 padding: const EdgeInsets.fromLTRB(
                                   16,
@@ -2056,23 +2172,28 @@ class _C2paTreeCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 6),
-            Stack(
-              children: <Widget>[
-                _C2paTreeThumbnail(
-                  path: thumbnailPath,
-                  format: manifest?.format ?? ingredient?.format,
-                ),
-                if (isAiGenerated)
-                  const Positioned(
-                    left: 6,
-                    top: 6,
-                    child: _C2paMiniTag(
-                      label: 'AI Generated',
-                      icon: Icons.smart_toy_outlined,
-                      filled: true,
-                    ),
+            // Expanded fills remaining height so the Column never overflows,
+            // regardless of font metrics differences across platforms.
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _C2paTreeThumbnail(
+                    path: thumbnailPath,
+                    format: manifest?.format ?? ingredient?.format,
                   ),
-              ],
+                  if (isAiGenerated)
+                    const Positioned(
+                      left: 6,
+                      top: 6,
+                      child: _C2paMiniTag(
+                        label: 'AI Generated',
+                        icon: Icons.smart_toy_outlined,
+                        filled: true,
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -2149,21 +2270,22 @@ class _C2paTreeThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No AspectRatio – the parent Expanded/Stack controls height.
+    // BoxFit.cover fills the space cleanly without overflow on any platform.
     return ClipRRect(
       key: const ValueKey<String>('c2pa-tree-thumbnail'),
       borderRadius: BorderRadius.circular(10),
-      child: AspectRatio(
-        aspectRatio: 4 / 3,
-        child: ColoredBox(
-          color: const Color(0xFF171A21),
-          child: path == null
-              ? _fallback()
-              : Image.file(
-                  File(path!),
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => _fallback(),
-                ),
-        ),
+      child: ColoredBox(
+        color: const Color(0xFF171A21),
+        child: path == null
+            ? _fallback()
+            : Image.file(
+                File(path!),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (_, _, _) => _fallback(),
+              ),
       ),
     );
   }

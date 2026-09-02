@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../models.dart';
 import 'c2pa_trust_list_service.dart';
+import 'mobile_c2pa_service.dart';
 
 class AiMetadataService {
   const AiMetadataService({
@@ -40,6 +41,19 @@ class AiMetadataService {
   }
 
   Future<AiMediaMetadata> probeC2pa(String filePath) async {
+    if (MobileC2paService.isSupportedPlatform) {
+      try {
+        final source = await MobileC2paService.readManifestJson(filePath);
+        if (source == null) {
+          return const AiMediaMetadata(c2paStatus: C2paStatus.absent);
+        }
+        return parseC2paJson(source);
+      } on FormatException {
+        return const AiMediaMetadata(c2paStatus: C2paStatus.invalid);
+      } on Object {
+        return const AiMediaMetadata(c2paStatus: C2paStatus.unknown);
+      }
+    }
     final executable = findC2paTool();
     if (executable == null) {
       return const AiMediaMetadata();

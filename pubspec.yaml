@@ -1,5 +1,5 @@
 name: c2pa_viewer
-description: "A focused desktop viewer for C2PA Content Credentials."
+description: "A focused mobile and desktop viewer for C2PA Content Credentials."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -41,9 +41,15 @@ dependencies:
   package_info_plus: ^10.2.1
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
+  c2pa_flutter: ^0.1.0
+  share_plus: ^13.3.0
+  # c2pa_flutter 0.1.0 was generated with this exact FRB runtime version.
+  flutter_rust_bridge: 2.11.1
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -69,6 +75,7 @@ flutter:
     - assets/app_icon_1024.png
     - assets/c2pa/perfect_collage_cert.pem
     - assets/c2pa/perfect_collage_private.key
+    - assets/c2pa/perfect_collage_private_pkcs8.key
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

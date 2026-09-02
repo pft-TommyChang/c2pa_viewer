@@ -1,6 +1,6 @@
 # Perfect C2PA
 
-Perfect C2PA is a focused macOS and Windows viewer for inspecting C2PA Content
+Perfect C2PA is a focused iOS, macOS, and Windows viewer for inspecting C2PA Content
 Credentials. It shows credential status, signer and manifest information,
 provenance history, validation checks, and raw manifest JSON.
 
@@ -15,6 +15,22 @@ provenance history, validation checks, and raw manifest JSON.
 - Open signed media directly from Perfect Collage.
 
 ## Development
+
+Run the iOS app (iOS 13 or newer):
+
+```bash
+./scripts/bootstrap_ios_rust.sh
+flutter run -d ios
+```
+
+The bootstrap keeps Rust under `.dart_tool`, and the iOS Pod build phase adds
+that project-local toolchain to its own `PATH`. This also works when launching
+from Xcode or an IDE without a globally installed `rustup`.
+
+The iOS build uses [`c2pa_flutter`](https://pub.dev/packages/c2pa_flutter) and
+its bundled `c2pa-rs` FFI implementation. On iOS, open a photo with the folder
+button. Signed JPEG, PNG, WebP, and TIFF output is exported through the iOS
+share sheet.
 
 Start the viewer and drag a media file into it:
 

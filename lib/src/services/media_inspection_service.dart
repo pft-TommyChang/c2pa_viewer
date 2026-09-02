@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:video_player/video_player.dart';
 
 import '../models.dart';
 import 'ai_metadata_service.dart';
@@ -62,6 +66,9 @@ class MediaInspectionService {
   }
 
   Future<VideoClipInfo> inspect(String path) async {
+    if (Platform.isIOS || Platform.isAndroid) {
+      return _inspectMobile(path);
+    }
     var hasSecurityScopedAccess = false;
     try {
       hasSecurityScopedAccess =
@@ -105,5 +112,55 @@ class MediaInspectionService {
         );
       }
     }
+  }
+
+  Future<VideoClipInfo> _inspectMobile(String path) async {
+    final extension = p.extension(path).toLowerCase();
+    final isPhoto = const <String>{
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.webp',
+      '.heic',
+      '.heif',
+    }.contains(extension);
+    var width = 0;
+    var height = 0;
+    var duration = Duration.zero;
+
+    if (isPhoto) {
+      final codec = await ui.instantiateImageCodec(
+        await File(path).readAsBytes(),
+      );
+      try {
+        final frame = await codec.getNextFrame();
+        width = frame.image.width;
+        height = frame.image.height;
+        frame.image.dispose();
+      } finally {
+        codec.dispose();
+      }
+    } else {
+      final controller = VideoPlayerController.file(File(path));
+      try {
+        await controller.initialize();
+        width = controller.value.size.width.round();
+        height = controller.value.size.height.round();
+        duration = controller.value.duration;
+      } finally {
+        await controller.dispose();
+      }
+    }
+
+    return VideoClipInfo(
+      path: path,
+      name: p.basename(path),
+      duration: duration,
+      width: width,
+      height: height,
+      hasAudio: !isPhoto,
+      mediaKind: isPhoto ? MediaKind.photo : MediaKind.video,
+      aiMetadata: await aiMetadataService.probe(path),
+    );
   }
 }
