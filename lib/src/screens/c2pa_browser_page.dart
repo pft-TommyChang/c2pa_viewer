@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -18,6 +17,7 @@ import '../services/c2pa_test_sign_service.dart';
 import '../services/c2pa_write_options_store.dart';
 import '../services/github_update_service.dart';
 import '../services/media_inspection_service.dart' show MediaInspectionService;
+import '../services/mobile_c2pa_service.dart';
 
 const Set<String> _supportedVideoExtensions = <String>{
   '.mp4',
@@ -267,8 +267,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
       if (source == null) return;
 
       if (source == _MediaSource.cameraRoll) {
-        final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-        if (picked != null) await _inspectPath(picked.path);
+        // Use native PHPickerViewController via c2pa_native channel so the
+        // original binary is returned intact (ImagePicker re-encodes and strips C2PA).
+        final originalPath = await MobileC2paService.pickOriginalMedia();
+        if (originalPath != null) await _inspectPath(originalPath);
       } else {
         final file = await openFile(
           acceptedTypeGroups: const <XTypeGroup>[
@@ -343,7 +345,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
       builder: (_) => _C2paWriteTestDialog(
         initialOptions: initialOptions,
         onOptionsChanged: _rememberWriteOptions,
-        mobileAddOnly: isMobile,
+        mobileNative: isMobile,
       ),
     );
     await _writeOptionsSaveQueue;
@@ -384,16 +386,23 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
         addToHistory: !p.equals(p.absolute(outputPath), p.absolute(clip.path)),
       );
       if (isMobile && mounted) {
-        final box = context.findRenderObject() as RenderBox?;
-        await SharePlus.instance.share(
-          ShareParams(
-            files: <XFile>[XFile(outputPath)],
-            title: 'Export signed Content Credentials',
-            sharePositionOrigin: box == null
-                ? null
-                : box.localToGlobal(Offset.zero) & box.size,
-          ),
-        );
+        try {
+          await MobileC2paService.saveToPhotoLibrary(outputPath);
+          _showErrorToast('Saved media with C2PA to Photos.');
+        } catch (saveError) {
+          _showErrorToast('Could not save to Photos directly, using share sheet instead: $saveError');
+          if (!mounted) return;
+          final box = context.findRenderObject() as RenderBox?;
+          await SharePlus.instance.share(
+            ShareParams(
+              files: <XFile>[XFile(outputPath)],
+              title: 'Export signed Content Credentials',
+              sharePositionOrigin: box == null
+                  ? null
+                  : box.localToGlobal(Offset.zero) & box.size,
+            ),
+          );
+        }
       }
     } catch (error) {
       _showErrorToast('$error');
@@ -538,6 +547,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                                   '.webp',
                                   '.tif',
                                   '.tiff',
+                                  '.heic',
+                                  '.mp4',
+                                  '.mov',
                                 }.contains(
                                   p.extension(_clip.path).toLowerCase(),
                                 )),
@@ -634,7 +646,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                             : _clip.aiMetadata.c2paStatus == C2paStatus.absent
                             ? _C2paNoCredentialsView(
                                 clip: _clip,
-                                hideDropPrompt: _isDragging,
+                                hideDropPrompt: _isDragging || Platform.isIOS || Platform.isAndroid,
                               )
                             : _C2paUnavailableView(clip: _clip),
                       ),
@@ -697,11 +709,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
 }
 
 class _C2paTab extends StatelessWidget {
-  const _C2paTab({
-    required this.icon,
-    required this.label,
-    this.mobileLabel,
-  });
+  const _C2paTab({required this.icon, required this.label, this.mobileLabel});
 
   final IconData icon;
   final String label;
@@ -731,12 +739,12 @@ class _C2paWriteTestDialog extends StatefulWidget {
   const _C2paWriteTestDialog({
     required this.initialOptions,
     required this.onOptionsChanged,
-    this.mobileAddOnly = false,
+    this.mobileNative = false,
   });
 
   final C2paWriteOptions initialOptions;
   final ValueChanged<C2paWriteOptions> onOptionsChanged;
-  final bool mobileAddOnly;
+  final bool mobileNative;
 
   @override
   State<_C2paWriteTestDialog> createState() => _C2paWriteTestDialogState();
@@ -774,10 +782,10 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text('這是 C2PA write 功能的測試工具，請選擇要套用到目前媒體的操作。'),
-            if (widget.mobileAddOnly) ...const <Widget>[
+            const Text('Select the C2PA operation to apply.'),
+            if (widget.mobileNative) ...const <Widget>[
               SizedBox(height: 8),
-              Text('iOS 會用 c2pa_flutter 新增簽章，完成後開啟分享面板。'),
+              Text('On iOS, the result is saved to Photos.'),
             ],
             const SizedBox(height: 12),
             RadioGroup<C2paWriteMode>(
@@ -790,31 +798,29 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
                   const RadioListTile<C2paWriteMode>(
                     key: ValueKey<String>('c2pa-write-add'),
                     value: C2paWriteMode.add,
-                    title: Text('增加 C2PA'),
-                    subtitle: Text('保留舊的 C2PA，新增一層測試簽章'),
+                    title: Text('Add C2PA'),
+                    subtitle: Text('Keep existing C2PA as parent, add a new claim'),
                     contentPadding: EdgeInsets.zero,
                   ),
-                  if (!widget.mobileAddOnly) ...<Widget>[
-                    const RadioListTile<C2paWriteMode>(
-                      key: ValueKey<String>('c2pa-write-replace'),
-                      value: C2paWriteMode.replace,
-                      title: Text('覆蓋 C2PA'),
-                      subtitle: Text('不保留舊的 C2PA，只寫入新的測試簽章'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const RadioListTile<C2paWriteMode>(
-                      key: ValueKey<String>('c2pa-write-remove'),
-                      value: C2paWriteMode.remove,
-                      title: Text('移除 C2PA'),
-                      subtitle: Text('輸出不含 Content Credentials 的媒體'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ],
+                  const RadioListTile<C2paWriteMode>(
+                    key: ValueKey<String>('c2pa-write-replace'),
+                    value: C2paWriteMode.replace,
+                    title: Text('Replace C2PA'),
+                    subtitle: Text('Discard existing C2PA, write a fresh claim'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const RadioListTile<C2paWriteMode>(
+                    key: ValueKey<String>('c2pa-write-remove'),
+                    value: C2paWriteMode.remove,
+                    title: Text('Remove C2PA'),
+                    subtitle: Text('Strip all Content Credentials'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ],
               ),
             ),
             const Divider(),
-            if (!widget.mobileAddOnly)
+            if (!widget.mobileNative)
               CheckboxListTile(
                 key: const ValueKey<String>('c2pa-create-new-file'),
                 value: _createNewFile,
@@ -823,7 +829,7 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
                 },
                 title: const Text('Create new file'),
                 subtitle: Text(
-                  _createNewFile ? '選擇另一個輸出位置，保留原始檔案' : '直接修改目前檔案',
+                  _createNewFile ? 'Save to a new file and keep the original' : 'Overwrite the current file in place',
                 ),
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: EdgeInsets.zero,
@@ -1407,8 +1413,7 @@ class _C2paOverview extends StatelessWidget {
         ('Title', manifest?.title ?? p.basename(clip.path)),
         (
           'Format',
-          manifest?.format ??
-              shortMediaTypeLabel(clip.path, clip.mediaKind),
+          manifest?.format ?? shortMediaTypeLabel(clip.path, clip.mediaKind),
         ),
         (
           'History',
@@ -1600,10 +1605,7 @@ class _C2paInfoCard extends StatelessWidget {
                 children: <InlineSpan>[
                   TextSpan(
                     text: '${visibleRows[i].$1}: ',
-                    style: const TextStyle(
-                      color: _c2paMutedText,
-                      fontSize: 11,
-                    ),
+                    style: const TextStyle(color: _c2paMutedText, fontSize: 11),
                   ),
                   TextSpan(text: visibleRows[i].$2!),
                 ],
@@ -1620,10 +1622,7 @@ class _C2paInfoCard extends StatelessWidget {
                 width: 94,
                 child: Text(
                   visibleRows[i].$1,
-                  style: const TextStyle(
-                    color: _c2paMutedText,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: _c2paMutedText, fontSize: 12),
                 ),
               ),
               Expanded(
@@ -2315,7 +2314,7 @@ class _C2paTreeThumbnail extends StatelessWidget {
             ? _fallback()
             : Image.file(
                 File(path!),
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 width: double.infinity,
                 height: double.infinity,
                 errorBuilder: (_, _, _) => _fallback(),

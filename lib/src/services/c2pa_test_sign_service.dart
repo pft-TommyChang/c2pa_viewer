@@ -81,15 +81,24 @@ class C2paTestSignService {
     C2paWriteMode mode,
   ) async {
     if (MobileC2paService.isSupportedPlatform) {
-      if (mode != C2paWriteMode.add) {
-        throw const C2paTestSignException(
-          'c2pa_flutter mobile currently supports adding a signed manifest only.',
-        );
-      }
       try {
-        await MobileC2paService.signImage(clip.path, outputPath);
+        if (mode == C2paWriteMode.remove) {
+          await MobileC2paService.removeC2pa(clip.path, outputPath);
+        } else {
+          await MobileC2paService.signMedia(
+            clip.path,
+            outputPath,
+            mode: mode == C2paWriteMode.add
+                ? C2paWriteModeNative.add
+                : C2paWriteModeNative.replace,
+          );
+        }
+      } on UnsupportedError catch (error) {
+        throw C2paTestSignException(
+          error.message ?? 'Unsupported format on mobile.',
+        );
       } on Object catch (error) {
-        throw C2paTestSignException('Could not sign this image: $error');
+        throw C2paTestSignException('Could not complete mobile C2PA operation: $error');
       }
       return;
     }

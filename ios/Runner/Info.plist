@@ -72,5 +72,7 @@
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Needed to inspect photos from your Camera Roll for C2PA credentials.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save signed photos and videos with their Content Credentials to your Photo Library.</string>
 </dict>
 </plist>

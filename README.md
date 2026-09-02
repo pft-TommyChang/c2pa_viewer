@@ -16,21 +16,16 @@ provenance history, validation checks, and raw manifest JSON.
 
 ## Development
 
-Run the iOS app (iOS 13 or newer):
+Run the iOS app (iOS 16 or newer):
 
 ```bash
-./scripts/bootstrap_ios_rust.sh
 flutter run -d ios
 ```
 
-The bootstrap keeps Rust under `.dart_tool`, and the iOS Pod build phase adds
-that project-local toolchain to its own `PATH`. This also works when launching
-from Xcode or an IDE without a globally installed `rustup`.
-
-The iOS build uses [`c2pa_flutter`](https://pub.dev/packages/c2pa_flutter) and
-its bundled `c2pa-rs` FFI implementation. On iOS, open a photo with the folder
-button. Signed JPEG, PNG, WebP, and TIFF output is exported through the iOS
-share sheet.
+The iOS build uses the native
+[`c2pa-swift`](https://github.com/contentauth/c2pa-swift) package. On iOS, open
+a supported photo or video with the folder button. Signed JPEG, PNG, WebP,
+TIFF, HEIC, MP4, and MOV output is saved directly to the iOS Photos library.
 
 Start the viewer and drag a media file into it:
 

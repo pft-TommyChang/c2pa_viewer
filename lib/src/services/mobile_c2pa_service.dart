@@ -1,76 +1,131 @@
 import 'dart:io';
 
-import 'package:c2pa_flutter/c2pa_flutter.dart';
-// The public reader currently drops c2pa-rs validation results. Keep the raw
-// JSON so the viewer can show the same validation detail as the desktop app.
-// ignore: implementation_imports
-import 'package:c2pa_flutter/src/rust/api/reader.dart' as c2pa_rust;
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
-/// Mobile C2PA adapter backed by c2pa_flutter/c2pa-rs.
+/// Mobile C2PA adapter backed by the native c2pa-swift (iOS) / c2pa-android
+/// (Android) SDKs via a Flutter MethodChannel.
+///
+/// iOS: requires c2pa-swift added via Xcode SPM ≥ 0.0.12, iOS 16+.
+/// Android: not yet implemented (no android/ directory in this project).
 class MobileC2paService {
   MobileC2paService._();
 
-  static bool get isSupportedPlatform => Platform.isIOS || Platform.isAndroid;
+  static const _channel = MethodChannel('c2pa_native');
 
-  static Future<void> initialize() => C2pa.init();
+  static const _certAsset = 'assets/c2pa/perfect_collage_cert.pem';
+  static const _keyAsset = 'assets/c2pa/perfect_collage_private_pkcs8.key';
 
-  static Future<String?> readManifestJson(String filePath) async {
-    await initialize();
-    final bytes = await File(filePath).readAsBytes();
-    return c2pa_rust.readManifest(fileBytes: bytes, path: filePath);
+  static bool get isSupportedPlatform => Platform.isIOS;
+
+  // ---------------------------------------------------------------------------
+  // Pick original
+  // ---------------------------------------------------------------------------
+
+  /// Presents the system photo picker and returns the path of a temporary file
+  /// containing the asset's original binary (HEIC/JPEG/MOV/MP4 etc.), preserving
+  /// all embedded metadata including C2PA. Returns null when the user cancels.
+  static Future<String?> pickOriginalMedia() async {
+    if (!isSupportedPlatform) return null;
+    return _channel.invokeMethod<String?>('pickOriginalMedia');
   }
 
-  static Future<void> signImage(String sourcePath, String outputPath) async {
-    await initialize();
-    final extension = p.extension(sourcePath).toLowerCase();
-    final mimeType = switch (extension) {
+  // ---------------------------------------------------------------------------
+  // Read
+  // ---------------------------------------------------------------------------
+
+  /// Returns the raw manifest JSON string, or null if the file has no C2PA data.
+  static Future<String?> readManifestJson(String filePath) async {
+    if (!isSupportedPlatform) return null;
+    return _channel.invokeMethod<String>('readManifest', {'path': filePath});
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sign
+  // ---------------------------------------------------------------------------
+
+  /// Sign [sourcePath] → [outputPath].
+  /// Supports images (jpeg, png, webp, tiff) and video (mp4, mov) on iOS.
+  /// Add preserves the source as a parent ingredient. Replace starts a new
+  /// provenance chain. The native SDK does not currently expose C2PA removal.
+  static Future<void> signMedia(
+    String sourcePath,
+    String outputPath, {
+    C2paWriteModeNative mode = C2paWriteModeNative.add,
+  }) async {
+    if (!isSupportedPlatform) {
+      throw UnsupportedError(
+        'signMedia is only supported on mobile platforms.',
+      );
+    }
+
+    final mimeType = _mimeType(sourcePath);
+    final certPem = await _loadAssetString(_certAsset);
+    final keyPem = await _loadAssetString(_keyAsset);
+
+    await _channel.invokeMethod<void>('signFile', {
+      'sourcePath': sourcePath,
+      'outputPath': outputPath,
+      'mimeType': mimeType,
+      'certPem': certPem,
+      'keyPem': keyPem,
+      'title': p.basename(outputPath),
+      'mode': mode.name,
+    });
+  }
+
+  /// Removes all C2PA manifests from [sourcePath] and writes the stripped
+  /// file to [outputPath]. Implemented via binary box stripping for video and
+  /// CGImageSource re-encode (without metadata) for images.
+  static Future<void> removeC2pa(
+    String sourcePath,
+    String outputPath,
+  ) async {
+    if (!isSupportedPlatform) {
+      throw UnsupportedError('removeC2pa is only supported on mobile platforms.');
+    }
+    final mimeType = _mimeType(sourcePath);
+    await _channel.invokeMethod<void>('removeFile', {
+      'sourcePath': sourcePath,
+      'outputPath': outputPath,
+      'mimeType': mimeType,
+    });
+  }
+
+  /// Saves the already-signed file to the iOS Photos library by file URL so
+  /// the embedded C2PA data is not lost through image re-encoding.
+  static Future<void> saveToPhotoLibrary(String filePath) async {
+    if (!Platform.isIOS) {
+      throw UnsupportedError('Saving to Photos is only supported on iOS.');
+    }
+    await _channel.invokeMethod<void>('saveToPhotoLibrary', {'path': filePath});
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  static String _mimeType(String path) {
+    return switch (p.extension(path).toLowerCase()) {
       '.jpg' || '.jpeg' => 'image/jpeg',
       '.png' => 'image/png',
       '.webp' => 'image/webp',
       '.tif' || '.tiff' => 'image/tiff',
-      _ => throw UnsupportedError(
-        'c2pa_flutter cannot sign ${extension.isEmpty ? 'this file' : extension} on mobile.',
+      '.heic' => 'image/heic',
+      '.mp4' => 'video/mp4',
+      '.mov' => 'video/quicktime',
+      final ext => throw UnsupportedError(
+        'c2pa_native cannot sign ${ext.isEmpty ? 'this file' : ext} on mobile.',
       ),
     };
-
-    final key = await rootBundle.load(
-      'assets/c2pa/perfect_collage_private_pkcs8.key',
-    );
-    final certificate = await rootBundle.load(
-      'assets/c2pa/perfect_collage_cert.pem',
-    );
-    final manifest =
-        ManifestBuilder(
-              claimGenerator: 'Perfect C2PA Mobile/1.0',
-              title: p.basename(outputPath),
-              format: mimeType,
-            )
-            .addAction(
-              C2paActions.edited(
-                description: 'Signed on mobile with Perfect C2PA',
-                softwareAgent: 'Perfect C2PA Mobile/1.0',
-              ),
-            )
-            .build();
-    final signer = FileSigner(
-      privateKeyPem: _bytes(key),
-      certChainPem: _bytes(certificate),
-      algorithm: SigningAlgorithm.es256,
-    );
-    final signedBytes = await C2pa.writer().sign(
-      imageBytes: await File(sourcePath).readAsBytes(),
-      mimeType: mimeType,
-      manifest: manifest,
-      signer: signer,
-    );
-
-    final destination = File(outputPath);
-    await destination.parent.create(recursive: true);
-    await destination.writeAsBytes(signedBytes, flush: true);
   }
 
-  static Uint8List _bytes(ByteData data) =>
-      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  static Future<String> _loadAssetString(String assetPath) async {
+    final bytes = await rootBundle.load(assetPath);
+    return String.fromCharCodes(
+      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+    );
+  }
 }
+
+enum C2paWriteModeNative { add, replace }

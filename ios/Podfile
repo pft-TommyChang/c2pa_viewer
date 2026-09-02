@@ -1,10 +1,8 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '13.0'
+platform :ios, '16.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-
-require 'shellwords'
 
 project 'Runner', {
   'Debug' => :debug,
@@ -39,29 +37,7 @@ target 'Runner' do
 end
 
 post_install do |installer|
-  project_root = File.expand_path('..', __dir__)
-  cargo_home = File.join(project_root, '.dart_tool', 'cargo')
-  rustup_home = File.join(project_root, '.dart_tool', 'rustup')
-
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-
-    next unless target.name == 'c2pa_flutter'
-
-    target.shell_script_build_phases.each do |phase|
-      next unless phase.name == '[CP-User] Build Rust library'
-
-      original_script = phase.shell_script
-      phase.shell_script = <<~SCRIPT
-        export CARGO_HOME=#{cargo_home.shellescape}
-        export RUSTUP_HOME=#{rustup_home.shellescape}
-        export PATH="$CARGO_HOME/bin:$PATH"
-        if [ ! -x "$CARGO_HOME/bin/rustup" ]; then
-          echo "error: Project-local rustup is missing. Run ./scripts/bootstrap_ios_rust.sh first." >&2
-          exit 1
-        fi
-        #{original_script}
-      SCRIPT
-    end
   end
 end

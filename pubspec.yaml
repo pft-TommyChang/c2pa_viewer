@@ -42,10 +42,7 @@ dependencies:
   package_info_plus: ^10.2.1
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
-  c2pa_flutter: ^0.1.0
   share_plus: ^13.3.0
-  # c2pa_flutter 0.1.0 was generated with this exact FRB runtime version.
-  flutter_rust_bridge: 2.11.1
 
 dev_dependencies:
   flutter_test:

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:c2pa_flutter/c2pa_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,9 +10,6 @@ import 'src/services/media_inspection_service.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (Platform.isIOS || Platform.isAndroid) {
-    await C2pa.init();
-  }
   final initialPath = arguments
       .where((argument) => !argument.startsWith('--'))
       .firstOrNull;
