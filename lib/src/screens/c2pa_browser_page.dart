@@ -40,6 +40,7 @@ const Color _c2paCardBorder = Color(0xFFD8D0C4);
 const Color _c2paMutedText = Color(0xFF697180);
 const Color _c2paAccent = Color(0xFFFF7A59);
 const Color _c2paAccentDark = Color(0xFFD95C3E);
+const double _c2paSectionGap = 7;
 const double _c2paTreeCardWidth = 234;
 const double _c2paTreeCardHeight = 274;
 const double _c2paTreeLevelGap = 48;
@@ -474,11 +475,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                         availableUpdate: _availableUpdate,
                         onUpdateTap: () => unawaited(_openReleasePage()),
                       ),
-                    // Tab bar: always shown when media loaded;
-                    // disabled (dimmed, non-interactive) when no C2PA report.
-                    if (_hasMedia) _C2paFileLocationBar(path: _clip.path),
-                    if (_hasMedia)
-                      Padding(
+                      // Tab bar: always shown when media loaded;
+                      // disabled (dimmed, non-interactive) when no C2PA report.
+                      if (_hasMedia)
+                        Padding(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                           child: IgnorePointer(
                             ignoring: report == null,
@@ -533,6 +533,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                             ),
                           ),
                         ),
+                      if (_hasMedia) ...<Widget>[
+                        const SizedBox(height: _c2paSectionGap),
+                        _C2paFileLocationBar(path: _clip.path),
+                      ],
                       Expanded(
                         child: report != null
                             ? TabBarView(
@@ -790,7 +794,7 @@ class _C2paPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = clip?.aiMetadata.c2paStatus;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 10, 11),
+      padding: const EdgeInsets.fromLTRB(20, 12, 10, _c2paSectionGap),
       child: Row(
         children: <Widget>[
           ClipRRect(
@@ -916,7 +920,7 @@ class _C2paFileLocationBar extends StatelessWidget {
         : 'Reveal in Finder';
     return Container(
       key: const ValueKey<String>('c2pa-file-location'),
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1113,7 +1117,7 @@ class _C2paNoCredentialsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
       children: <Widget>[
         SizedBox(
           height: 206,
@@ -1269,7 +1273,7 @@ class _C2paOverview extends StatelessWidget {
   Widget build(BuildContext context) {
     final manifest = report.activeManifest;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
       children: <Widget>[
         SizedBox(
           height: 206,
@@ -1816,8 +1820,14 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
       children: <Widget>[
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            padding: const EdgeInsets.fromLTRB(
+              12,
+              _c2paSectionGap,
+              12,
+              12,
+            ),
             child: DecoratedBox(
+              key: const ValueKey<String>('c2pa-history-panel'),
               decoration: BoxDecoration(
                 color: _c2paPanelBackground,
                 borderRadius: BorderRadius.circular(18),
@@ -2214,7 +2224,7 @@ class _C2paTechnicalView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
       children: <Widget>[
         Row(
           children: <Widget>[

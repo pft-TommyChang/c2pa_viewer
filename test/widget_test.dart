@@ -96,7 +96,27 @@ void main() {
       tester
           .getTopLeft(find.byKey(const ValueKey<String>('c2pa-file-location')))
           .dy,
-      lessThan(tester.getTopLeft(find.byType(TabBar)).dy),
+      greaterThan(tester.getTopLeft(find.byType(TabBar)).dy),
+    );
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey<String>('c2pa-file-location')))
+          .dy -
+          tester.getBottomLeft(find.byType(TabBar)).dy,
+      7,
+    );
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const ValueKey<String>('c2pa-no-cred-preview')),
+          )
+          .dy -
+          tester
+              .getBottomLeft(
+                find.byKey(const ValueKey<String>('c2pa-file-location')),
+              )
+              .dy,
+      7,
     );
     expect(find.text('source.png'), findsOneWidget);
     expect(find.text(sourceFile.path), findsOneWidget);
@@ -234,6 +254,18 @@ void main() {
     await tester.tap(find.text('History'));
     await tester.pumpAndSettle();
     await tester.pump();
+
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey<String>('c2pa-history-panel')))
+          .dy -
+          tester
+              .getBottomLeft(
+                find.byKey(const ValueKey<String>('c2pa-file-location')),
+              )
+              .dy,
+      7,
+    );
 
     InteractiveViewer historyViewer() => tester.widget<InteractiveViewer>(
       find.byKey(const ValueKey<String>('c2pa-history-viewer')),
