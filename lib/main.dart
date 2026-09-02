@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -109,7 +108,6 @@ class _ViewerHomeState extends State<_ViewerHome> {
       pendingPaths: _pendingPaths,
       openGeneration: _openGeneration,
       mediaLoader: _inspectionService.inspect,
-      onClose: () => exit(0),
     );
   }
 }

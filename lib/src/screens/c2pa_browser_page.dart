@@ -68,7 +68,6 @@ class C2paBrowserPage extends StatefulWidget {
     required this.mediaLoader,
     this.pendingPaths = const [],
     this.openGeneration = 0,
-    this.onClose,
     this.checkForUpdatesOnLaunch = true,
     this.updateService = const GitHubUpdateService(
       owner: 'pft-TommyChang',
@@ -79,7 +78,6 @@ class C2paBrowserPage extends StatefulWidget {
   final C2paMediaLoader mediaLoader;
   final List<String> pendingPaths;
   final int openGeneration;
-  final VoidCallback? onClose;
   final bool checkForUpdatesOnLaunch;
   final GitHubUpdateService updateService;
 
@@ -336,8 +334,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       _C2paPageHeader(
                         clip: _hasMedia ? _clip : null,
                         onOpen: () => unawaited(_pickMedia()),
-                        onClose:
-                            widget.onClose ?? () => Navigator.of(context).pop(),
                         onPrev: () => unawaited(_navigatePrev()),
                         onNext: () => unawaited(_navigateNext()),
                         canGoPrev: _canGoPrev,
@@ -514,7 +510,6 @@ class _C2paPageHeader extends StatelessWidget {
   const _C2paPageHeader({
     required this.clip,
     required this.onOpen,
-    required this.onClose,
     required this.onPrev,
     required this.onNext,
     required this.canGoPrev,
@@ -526,7 +521,6 @@ class _C2paPageHeader extends StatelessWidget {
 
   final VideoClipInfo? clip;
   final VoidCallback onOpen;
-  final VoidCallback onClose;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final bool canGoPrev;
@@ -631,12 +625,6 @@ class _C2paPageHeader extends StatelessWidget {
             tooltip: 'Open media',
             onPressed: onOpen,
             icon: const Icon(Icons.folder_open_outlined),
-          ),
-          IconButton(
-            key: const ValueKey<String>('close-c2pa-browser'),
-            tooltip: 'Close',
-            onPressed: onClose,
-            icon: const Icon(Icons.close),
           ),
         ],
       ),
