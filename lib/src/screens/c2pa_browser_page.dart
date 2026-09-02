@@ -98,7 +98,8 @@ class C2paBrowserPage extends StatefulWidget {
   State<C2paBrowserPage> createState() => _C2paBrowserPageState();
 }
 
-class _C2paBrowserPageState extends State<C2paBrowserPage> {
+class _C2paBrowserPageState extends State<C2paBrowserPage>
+    with SingleTickerProviderStateMixin {
   late VideoClipInfo _clip;
   late VideoPlayerController? _controller;
   bool _isDragging = false;
@@ -113,6 +114,11 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   C2paWriteOptions? _lastWriteOptions;
   Future<void> _writeOptionsSaveQueue = Future<void>.value();
 
+  // Tab controller so we can read active tab index during build.
+  late TabController _tabController;
+  // When true, History tree is in "fit" mode → allow swipe-to-change-tab.
+  bool _historyZoomIsFit = true;
+
   // Update check
   GitHubRelease? _availableUpdate;
   String _versionLabel = '';
@@ -121,6 +127,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this)
+      // Rebuild on tab change so TabBarView physics update.
+      ..addListener(() { if (mounted) setState(() {}); });
     _clip = _emptyC2paClip();
     _controller = null;
     _writeOptionsStore = widget.writeOptionsStore;
@@ -181,6 +190,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -491,9 +501,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
             onDragEntered: (_) => setState(() => _isDragging = true),
             onDragExited: (_) => setState(() => _isDragging = false),
             onDragDone: (details) => unawaited(_handleDrop(details.files)),
-            child: DefaultTabController(
-              length: 3,
-              child: Stack(
+            child: Stack(
                 children: <Widget>[
                   Column(
                     children: <Widget>[
@@ -542,9 +550,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                                 color: _c2paPanelBackground,
                                 borderRadius: BorderRadius.circular(14),
                                 clipBehavior: Clip.antiAlias,
-                                child: const SizedBox(
+                                child: SizedBox(
                                   height: 44,
                                   child: TabBar(
+                                    controller: _tabController,
                                     dividerColor: Colors.transparent,
                                     indicator: BoxDecoration(
                                       color: Colors.white,
@@ -593,13 +602,31 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                       Expanded(
                         child: report != null
                             ? TabBarView(
+                                controller: _tabController,
+                                // Mobile: lock swipe when on History tab and
+                                // not fit-mode, so InteractiveViewer pan wins.
+                                // In fit-mode the user likely intends to swipe
+                                // tabs, not pan an already-fitted canvas.
+                                physics:
+                                    (Platform.isIOS || Platform.isAndroid) &&
+                                            _tabController.index == 1 &&
+                                            !_historyZoomIsFit
+                                        ? const NeverScrollableScrollPhysics()
+                                        : null,
                                 children: <Widget>[
                                   _C2paOverview(
                                     clip: _clip,
                                     report: report,
                                     controller: _controller,
                                   ),
-                                  _C2paHistoryTree(clip: _clip, report: report),
+                                  _C2paHistoryTree(
+                                    clip: _clip,
+                                    report: report,
+                                    onZoomModeChanged: (mode) => setState(
+                                      () => _historyZoomIsFit =
+                                          mode == _ZoomMode.fit,
+                                    ),
+                                  ),
                                   _C2paTechnicalView(report: report),
                                 ],
                               )
@@ -666,7 +693,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
                     ),
                 ],
               ),
-            ),
           ),
         ),
       ),
@@ -1720,10 +1746,16 @@ class _C2paActionTile extends StatelessWidget {
 }
 
 class _C2paHistoryTree extends StatefulWidget {
-  const _C2paHistoryTree({required this.clip, required this.report});
+  const _C2paHistoryTree({
+    required this.clip,
+    required this.report,
+    this.onZoomModeChanged,
+  });
 
   final VideoClipInfo clip;
   final C2paReport report;
+  // Notifies parent of zoom mode changes so it can adjust TabBarView physics.
+  final void Function(_ZoomMode mode)? onZoomModeChanged;
 
   @override
   State<_C2paHistoryTree> createState() => _C2paHistoryTreeState();
@@ -1799,6 +1831,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
 
   void _setMode(_ZoomMode mode) {
     setState(() => _zoomMode = mode);
+    widget.onZoomModeChanged?.call(mode);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       switch (mode) {
         case _ZoomMode.fit:
@@ -1968,7 +2001,12 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                     }
                     return Stack(
                       children: <Widget>[
-                        Listener(
+                        GestureDetector(
+                          // Double-tap resets to fit. Uses onDoubleTap only
+                          // (no onTap) so there is zero delay on single
+                          // pointer-down events — pan sensitivity unchanged.
+                          onDoubleTap: () => _setMode(_ZoomMode.fit),
+                          child: Listener(
                           onPointerDown: (_) => _setCanvasGrabbed(true),
                           onPointerUp: (_) => _setCanvasGrabbed(false),
                           onPointerCancel: (_) => _setCanvasGrabbed(false),
@@ -1994,6 +2032,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                               onInteractionStart: (_) {
                                 if (_zoomMode != _ZoomMode.free) {
                                   setState(() => _zoomMode = _ZoomMode.free);
+                                  widget.onZoomModeChanged?.call(_ZoomMode.free);
                                 }
                               },
                               onInteractionEnd: (_) => _setCanvasGrabbed(false),
@@ -2012,7 +2051,8 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                               ),
                             ),
                           ),
-                        ),
+                        ), // closes Listener
+                        ), // closes GestureDetector
                         Positioned(
                           top: 12,
                           right: 12,
