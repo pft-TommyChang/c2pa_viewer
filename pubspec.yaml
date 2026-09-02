@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   desktop_drop: ^0.7.1
   file_selector: ^1.1.0
+  image_picker: ^1.1.2
   path: ^1.9.1
   video_player: ^2.11.1
   package_info_plus: ^10.2.1

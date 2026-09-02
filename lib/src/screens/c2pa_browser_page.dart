@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -241,35 +242,68 @@ class _C2paBrowserPageState extends State<C2paBrowserPage> {
 
   Future<void> _pickMedia() async {
     final mobile = Platform.isIOS || Platform.isAndroid;
-    final file = await openFile(
-      acceptedTypeGroups: mobile
-          ? const <XTypeGroup>[
-              XTypeGroup(
-                label: 'Photos',
-                uniformTypeIdentifiers: <String>['public.image'],
+    if (mobile) {
+      // Show bottom sheet to let user choose source
+      final source = await showModalBottomSheet<_MediaSource>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: const Text('Files'),
+                onTap: () => Navigator.of(ctx).pop(_MediaSource.files),
               ),
-            ]
-          : const <XTypeGroup>[
-              XTypeGroup(
-                label: 'Photos and videos',
-                extensions: <String>[
-                  'mp4',
-                  'mov',
-                  'm4v',
-                  'avi',
-                  'mkv',
-                  'webm',
-                  'jpg',
-                  'jpeg',
-                  'png',
-                  'webp',
-                  'heic',
-                  'heif',
-                ],
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Camera Roll'),
+                onTap: () => Navigator.of(ctx).pop(_MediaSource.cameraRoll),
               ),
             ],
-    );
-    if (file != null) await _inspectPath(file.path);
+          ),
+        ),
+      );
+      if (source == null) return;
+
+      if (source == _MediaSource.cameraRoll) {
+        final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+        if (picked != null) await _inspectPath(picked.path);
+      } else {
+        final file = await openFile(
+          acceptedTypeGroups: const <XTypeGroup>[
+            XTypeGroup(
+              label: 'Photos',
+              uniformTypeIdentifiers: <String>['public.image'],
+            ),
+          ],
+        );
+        if (file != null) await _inspectPath(file.path);
+      }
+    } else {
+      final file = await openFile(
+        acceptedTypeGroups: const <XTypeGroup>[
+          XTypeGroup(
+            label: 'Photos and videos',
+            extensions: <String>[
+              'mp4',
+              'mov',
+              'm4v',
+              'avi',
+              'mkv',
+              'webm',
+              'jpg',
+              'jpeg',
+              'png',
+              'webp',
+              'heic',
+              'heif',
+            ],
+          ),
+        ],
+      );
+      if (file != null) await _inspectPath(file.path);
+    }
   }
 
   // Push path onto history, truncating any forward entries.
@@ -2673,3 +2707,5 @@ class _ZoomSep extends StatelessWidget {
     );
   }
 }
+
+enum _MediaSource { files, cameraRoll }
