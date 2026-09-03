@@ -11,6 +11,7 @@ void main() {
       'manifests': <String, Object>{
         'active': <String, Object>{
           'title': 'result.png',
+          'claim_version': 2,
           'signature_info': <String, Object>{
             'issuer': 'Example Studio',
             'alg': 'PS256',
@@ -28,8 +29,14 @@ void main() {
                 'actions': <Object>[
                   <String, Object>{
                     'action': 'c2pa.edited',
+                    'softwareAgent': <String, Object>{
+                      'name': 'Example AI Studio',
+                      'version': '1.0.0',
+                    },
                     'parameters': <String, Object>{
                       'model_name': 'example-model',
+                      'digital_source_type':
+                          'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
                     },
                   },
                 ],
@@ -47,6 +54,9 @@ void main() {
           ],
         },
       },
+      'validation_status': <Object>[
+        <String, Object>{'code': 'signingCredential.untrusted'},
+      ],
     });
 
     final metadata = AiMetadataService.parseC2paJson(source);
@@ -55,11 +65,23 @@ void main() {
     expect(metadata.vendor, 'Example Studio');
     expect(metadata.model, 'example-model');
     expect(metadata.c2paReport?.manifests, hasLength(2));
+    expect(metadata.c2paReport?.activeManifest?.claimVersion, 'v2');
+    expect(metadata.c2paReport?.activeManifest?.contentType, 'AI-generated');
+    expect(metadata.c2paReport?.activeManifest?.software, 'Example AI Studio');
     expect(
       metadata.c2paReport?.activeManifest?.ingredients.single.manifestLabel,
       'source',
     );
     expect(metadata.c2paReport?.passedCheckCount, 2);
+    expect(metadata.c2paReport?.failedCheckCount, 1);
+    expect(
+      metadata.c2paReport?.validationEntries.map((entry) => entry.code),
+      <String>[
+        'signingCredential.untrusted',
+        'claimSignature.validated',
+        'signingCredential.trusted',
+      ],
+    );
   });
 
   test('distinguishes untrusted and invalid credentials', () {

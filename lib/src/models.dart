@@ -83,11 +83,13 @@ class C2paManifest {
     this.title,
     this.format,
     this.instanceId,
+    this.claimVersion,
     this.issuer,
     this.commonName,
     this.algorithm,
     this.signedAt,
-    this.claimGenerator,
+    this.contentType,
+    this.software,
     this.thumbnailPath,
     this.actions = const <C2paAction>[],
     this.ingredients = const <C2paIngredient>[],
@@ -97,11 +99,13 @@ class C2paManifest {
   final String? title;
   final String? format;
   final String? instanceId;
+  final String? claimVersion;
   final String? issuer;
   final String? commonName;
   final String? algorithm;
   final String? signedAt;
-  final String? claimGenerator;
+  final String? contentType;
+  final String? software;
   final String? thumbnailPath;
   final List<C2paAction> actions;
   final List<C2paIngredient> ingredients;

@@ -1390,10 +1390,11 @@ class _C2paOverview extends StatelessWidget {
       title: 'Signer',
       icon: Icons.draw_outlined,
       rows: <(String, String?)>[
-        ('Issuer', manifest?.issuer ?? manifest?.commonName),
+        ('Signer', manifest?.commonName),
+        ('Issuer', manifest?.issuer),
         ('Algorithm', manifest?.algorithm),
         ('Signed', manifest?.signedAt),
-        ('App or device', manifest?.claimGenerator),
+        ('Software', manifest?.software),
       ],
       shrinkWrap: isMobile,
     );
@@ -1407,6 +1408,8 @@ class _C2paOverview extends StatelessWidget {
           'Format',
           manifest?.format ?? shortMediaTypeLabel(clip.path, clip.mediaKind),
         ),
+        ('Claim Version', manifest?.claimVersion),
+        ('Content type', manifest?.contentType),
         (
           'History',
           '${report.manifests.length} manifest${report.manifests.length == 1 ? '' : 's'}',
@@ -1663,14 +1666,16 @@ class _C2paInfoCard extends StatelessWidget {
               },
             )
           else
-            // Bounded context (desktop row): fill remaining height with spaceEvenly.
+            // Keep long metadata readable instead of overflowing fixed-height cards.
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 240;
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _buildRows(compact),
+                  return SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _buildRows(compact),
+                    ),
                   );
                 },
               ),
@@ -2440,19 +2445,11 @@ class _C2paTechnicalView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFF8FAFC),
             border: Border.all(color: _c2paCardBorder),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: SelectableText(
-            report.rawJson,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 11.5,
-              color: Color(0xFF303642),
-              height: 1.45,
-            ),
-          ),
+          child: SelectableText.rich(_highlightJson(report.rawJson)),
         ),
       ],
     );
@@ -2502,6 +2499,46 @@ class _C2paValidationTile extends StatelessWidget {
       ),
     );
   }
+}
+
+TextSpan _highlightJson(String source) {
+  final baseStyle = TextStyle(
+    fontFamily: Platform.isIOS || Platform.isMacOS ? 'Menlo' : 'monospace',
+    fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
+    fontSize: 11.5,
+    fontWeight: FontWeight.w500,
+    color: const Color(0xFF475569),
+    height: 1.55,
+  );
+  const keyStyle = TextStyle(color: Color(0xFF2563EB));
+  const stringStyle = TextStyle(color: Color(0xFF15803D));
+  const numberStyle = TextStyle(color: Color(0xFFB45309));
+  const literalStyle = TextStyle(color: Color(0xFF7C3AED));
+  const punctuationStyle = TextStyle(color: Color(0xFF64748B));
+  final tokenPattern = RegExp(
+    r'"(?:\\.|[^"\\])*"|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\],:]',
+  );
+  final spans = <InlineSpan>[];
+  var offset = 0;
+  for (final match in tokenPattern.allMatches(source)) {
+    if (match.start > offset) {
+      spans.add(TextSpan(text: source.substring(offset, match.start)));
+    }
+    final token = match.group(0)!;
+    final style = token.startsWith('"')
+        ? RegExp(r'^\s*:').hasMatch(source.substring(match.end))
+              ? keyStyle
+              : stringStyle
+        : token == 'true' || token == 'false' || token == 'null'
+        ? literalStyle
+        : RegExp(r'^-?\d').hasMatch(token)
+        ? numberStyle
+        : punctuationStyle;
+    spans.add(TextSpan(text: token, style: style));
+    offset = match.end;
+  }
+  if (offset < source.length) spans.add(TextSpan(text: source.substring(offset)));
+  return TextSpan(style: baseStyle, children: spans);
 }
 
 class _C2paEmptyCard extends StatelessWidget {
@@ -2712,4 +2749,3 @@ class _ZoomSep extends StatelessWidget {
     );
   }
 }
-

@@ -162,9 +162,9 @@ void main() {
     await tester.tap(testSignButton);
     await tester.pumpAndSettle();
     expect(find.text('C2PA write test'), findsOneWidget);
-    expect(find.text('增加 C2PA'), findsOneWidget);
-    expect(find.text('覆蓋 C2PA'), findsOneWidget);
-    expect(find.text('移除 C2PA'), findsOneWidget);
+    expect(find.text('Add C2PA'), findsOneWidget);
+    expect(find.text('Replace C2PA'), findsOneWidget);
+    expect(find.text('Remove C2PA'), findsOneWidget);
     expect(find.text('Create new file'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey<String>('run-c2pa-write-test')));
     await tester.pumpAndSettle();
@@ -294,7 +294,63 @@ void main() {
     expect(panRegion().cursor, SystemMouseCursors.grabbing);
     await gesture.up();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
     expect(panRegion().cursor, SystemMouseCursors.grab);
+  });
+
+  testWidgets('shows C2PA signer and manifest metadata', (tester) async {
+    final sourcePath = File('assets/app_icon_1024.png').absolute.path;
+    const report = C2paReport(
+      activeManifestLabel: 'active',
+      manifests: <C2paManifest>[
+        C2paManifest(
+          label: 'active',
+          title: 'source.png',
+          issuer: 'Byteplus Pte. Ltd.',
+          commonName: 'certificate@byteplus.com',
+          algorithm: 'PS256',
+          claimVersion: 'v2',
+          contentType: 'AI-generated',
+          software: 'BytePlus ModelArk',
+        ),
+      ],
+      validationEntries: <C2paValidationEntry>[],
+      rawJson: '{}',
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: C2paBrowserPage(
+        pendingPaths: <String>[sourcePath],
+        checkForUpdatesOnLaunch: false,
+        mediaLoader: (path) async => VideoClipInfo(
+          path: path,
+          name: 'source.png',
+          duration: Duration.zero,
+          width: 100,
+          height: 100,
+          hasAudio: false,
+          mediaKind: MediaKind.photo,
+          aiMetadata: const AiMediaMetadata(
+            c2paStatus: C2paStatus.conformant,
+            c2paReport: report,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    for (final text in <String>[
+      'Signer',
+      'certificate@byteplus.com',
+      'Software',
+      'BytePlus ModelArk',
+      'Claim Version',
+      'Content type',
+      'AI-generated',
+    ]) {
+      expect(find.textContaining(text, findRichText: true), findsAtLeastNWidgets(1));
+    }
+    expect(find.textContaining('App or device', findRichText: true), findsNothing);
   });
   _updateTests();
 }

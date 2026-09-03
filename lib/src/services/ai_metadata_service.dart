@@ -306,28 +306,40 @@ class AiMetadataService {
       final manifest = entry.value;
       if (manifest is! Map) continue;
       final signature = manifest['signature_info'];
+      String? software;
+      String? contentType;
       final actions = <C2paAction>[];
       final assertions = manifest['assertions'];
       if (assertions is List) {
         for (final assertion in assertions.whereType<Map>()) {
+          final label = _nonEmptyString(assertion['label']);
           final assertionData = assertion['data'];
+          if (label == 'c2pa.ai-disclosure' && assertionData is Map) {
+            contentType ??= 'AI-generated';
+          }
           if (assertionData is! Map) continue;
           final rawActions = assertionData['actions'];
           if (rawActions is! List) continue;
           for (final rawAction in rawActions.whereType<Map>()) {
             final parameters = rawAction['parameters'];
+            final softwareAgent = _softwareAgentName(
+              rawAction['softwareAgent'],
+            );
+            final digitalSourceType =
+                _nonEmptyString(rawAction['digitalSourceType']) ??
+                (parameters is Map
+                    ? _nonEmptyString(parameters['digital_source_type'])
+                    : null);
             actions.add(
               C2paAction(
                 action:
                     _nonEmptyString(rawAction['action']) ?? 'Unknown action',
-                softwareAgent: _displayString(rawAction['softwareAgent']),
-                digitalSourceType:
-                    _nonEmptyString(rawAction['digitalSourceType']) ??
-                    (parameters is Map
-                        ? _nonEmptyString(parameters['digital_source_type'])
-                        : null),
+                softwareAgent: softwareAgent,
+                digitalSourceType: digitalSourceType,
               ),
             );
+            software ??= softwareAgent;
+            contentType ??= _contentTypeForDigitalSourceType(digitalSourceType);
           }
         }
       }
@@ -358,6 +370,10 @@ class AiMetadataService {
           title: _nonEmptyString(manifest['title']),
           format: _nonEmptyString(manifest['format']),
           instanceId: _nonEmptyString(manifest['instance_id']),
+          claimVersion: _claimVersion(manifest['claim_version']) ??
+              (signature is Map
+                  ? _claimVersion(signature['claim_version'])
+                  : null),
           issuer: signature is Map
               ? _nonEmptyString(signature['issuer'])
               : null,
@@ -372,9 +388,8 @@ class AiMetadataService {
               ? _nonEmptyString(signature['time']) ??
                     _nonEmptyString(signature['signed_at'])
               : null,
-          claimGenerator:
-              _displayString(manifest['claim_generator_info']) ??
-              _displayString(manifest['claim_generator']),
+          contentType: contentType,
+          software: software,
           thumbnailPath: _resourcePathFor(
             resourceDirectory,
             manifest['thumbnail'],
@@ -430,9 +445,8 @@ class AiMetadataService {
           validations.add(
             C2paValidationEntry(
               code: code,
-              outcome: code.startsWith('signingCredential.untrusted')
-                  ? C2paValidationOutcome.informational
-                  : C2paValidationOutcome.failed,
+              // The official reader presents untrusted credentials as failed.
+              outcome: C2paValidationOutcome.failed,
               explanation:
                   _nonEmptyString(statusItem['explanation']) ??
                   _nonEmptyString(statusItem['message']),
@@ -441,13 +455,26 @@ class AiMetadataService {
         }
       }
     }
+    final orderedValidations = <C2paValidationEntry>[
+      ...validations.where(
+        (entry) => entry.outcome == C2paValidationOutcome.failed,
+      ),
+      ...validations.where(
+        (entry) => entry.outcome == C2paValidationOutcome.passed,
+      ),
+      ...validations.where(
+        (entry) => entry.outcome == C2paValidationOutcome.informational,
+      ),
+    ];
 
     return C2paReport(
       activeManifestLabel:
           _nonEmptyString(root['active_manifest']) ??
           (manifests.isEmpty ? '' : manifests.first.label),
       manifests: List<C2paManifest>.unmodifiable(manifests),
-      validationEntries: List<C2paValidationEntry>.unmodifiable(validations),
+      validationEntries: List<C2paValidationEntry>.unmodifiable(
+        orderedValidations,
+      ),
       rawJson: const JsonEncoder.withIndent('  ').convert(root),
     );
   }
@@ -463,6 +490,45 @@ class AiMetadataService {
       return name ?? version;
     }
     return null;
+  }
+
+  static String? _softwareAgentName(dynamic value) {
+    if (value is Map) return _nonEmptyString(value['name']);
+    return _displayString(value);
+  }
+
+  static String? _claimVersion(dynamic value) {
+    final version = value is num ? value.toString() : _nonEmptyString(value);
+    if (version == null) return null;
+    return version.toLowerCase().startsWith('v') ? version : 'v$version';
+  }
+
+  static String? _contentTypeForDigitalSourceType(String? value) {
+    if (value == null) return null;
+    final normalized = value.toLowerCase();
+    if (normalized.contains('trainedalgorithmicmedia') ||
+        normalized.contains('compositesynthetic') ||
+        normalized.contains('algorithmicallyenhanced')) {
+      return 'AI-generated';
+    }
+    final short = _shortValue(value).replaceAll('_', ' ');
+    if (short.isEmpty) return null;
+    return '${short[0].toUpperCase()}${short.substring(1)}';
+  }
+
+  static String _shortValue(String value) {
+    final hashIndex = value.lastIndexOf('#');
+    if (hashIndex >= 0 && hashIndex < value.length - 1) {
+      return value.substring(hashIndex + 1);
+    }
+    final slashIndex = value.lastIndexOf('/');
+    if (slashIndex >= 0 && slashIndex < value.length - 1) {
+      return value.substring(slashIndex + 1);
+    }
+    final dotIndex = value.lastIndexOf('.');
+    return dotIndex >= 0 && dotIndex < value.length - 1
+        ? value.substring(dotIndex + 1)
+        : value;
   }
 
   static String? _resourcePathFor(
