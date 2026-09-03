@@ -30,8 +30,8 @@ void main() {
     PackageInfo.setMockInitialValues(
       appName: 'Perfect C2PA',
       packageName: 'c2pa_viewer',
-      version: '1.0.3',
-      buildNumber: '103',
+      version: '1.0.4',
+      buildNumber: '104',
       buildSignature: '',
     );
   });
@@ -135,7 +135,7 @@ void main() {
       find.byKey(const ValueKey<String>('c2pa-file-size')),
       findsOneWidget,
     );
-    expect(find.text('v1.0.3 (103)'), findsOneWidget);
+    expect(find.text('v1.0.4 (104)'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('copy-media-path')),
       findsOneWidget,
