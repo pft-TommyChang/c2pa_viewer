@@ -4,15 +4,17 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../models.dart';
+import 'c2pa_platform_adapter.dart';
 import 'c2pa_trust_list_service.dart';
-import 'mobile_c2pa_service.dart';
 
 class AiMetadataService {
   const AiMetadataService({
     this.trustListService = const C2paTrustListService(),
+    this.platformAdapter = const DefaultC2paPlatformAdapter(),
   });
 
   final C2paTrustListService trustListService;
+  final C2paPlatformAdapter platformAdapter;
   static final Set<String> _temporaryResourceDirectories = <String>{};
 
   static void cleanupExtractedResources() {
@@ -41,7 +43,7 @@ class AiMetadataService {
   }
 
   Future<AiMediaMetadata> probeC2pa(String filePath) async {
-    if (MobileC2paService.isSupportedPlatform) {
+    if (platformAdapter.usesNativeSdk) {
       String? temporaryRootPath;
       try {
         final temporaryRoot = await Directory.systemTemp.createTemp(
@@ -49,7 +51,7 @@ class AiMetadataService {
         );
         temporaryRootPath = temporaryRoot.path;
         _temporaryResourceDirectories.add(temporaryRoot.path);
-        final source = await MobileC2paService.readManifestWithResources(
+        final source = await platformAdapter.readManifestWithResources(
           filePath,
           temporaryRoot.path,
         );
@@ -60,10 +62,14 @@ class AiMetadataService {
         }
         return parseC2paJson(source, resourceDirectory: temporaryRoot.path);
       } on FormatException {
-        if (temporaryRootPath != null) _discardTemporaryResources(temporaryRootPath);
+        if (temporaryRootPath != null) {
+          _discardTemporaryResources(temporaryRootPath);
+        }
         return const AiMediaMetadata(c2paStatus: C2paStatus.invalid);
       } on Object {
-        if (temporaryRootPath != null) _discardTemporaryResources(temporaryRootPath);
+        if (temporaryRootPath != null) {
+          _discardTemporaryResources(temporaryRootPath);
+        }
         return const AiMediaMetadata(c2paStatus: C2paStatus.unknown);
       }
     }

@@ -6,8 +6,11 @@ import 'package:path/path.dart' as p;
 
 import '../models.dart';
 import 'ai_metadata_service.dart';
+import 'c2pa_platform_adapter.dart';
+import 'c2pa_write_models.dart';
 import 'media_inspection_service.dart';
-import 'mobile_c2pa_service.dart';
+
+export 'c2pa_write_models.dart';
 
 typedef C2paSignProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> arguments);
@@ -24,15 +27,6 @@ typedef C2paTestWriter =
       String outputPath,
       C2paWriteMode mode,
     );
-
-enum C2paWriteMode { add, replace, remove }
-
-class C2paWriteOptions {
-  const C2paWriteOptions({required this.mode, required this.createNewFile});
-
-  final C2paWriteMode mode;
-  final bool createNewFile;
-}
 
 class C2paTestSignException implements Exception {
   const C2paTestSignException(this.message);
@@ -60,13 +54,15 @@ class C2paTestSignService {
     C2paManifestRemover? manifestRemover,
     String? Function()? toolLocator,
     C2paScopedFileAccess? scopedFileAccess,
+    C2paPlatformAdapter? platformAdapter,
   }) : _processRunner = processRunner ?? _runProcess,
        _thumbnailGenerator = thumbnailGenerator ?? _generateThumbnail,
        _assetLoader = assetLoader ?? _loadAsset,
        _manifestRemover = manifestRemover ?? MediaInspectionService.removeC2pa,
        _toolLocator = toolLocator ?? AiMetadataService.findC2paTool,
        _scopedFileAccess =
-           scopedFileAccess ?? MediaInspectionService.withSecurityScopedAccess;
+           scopedFileAccess ?? MediaInspectionService.withSecurityScopedAccess,
+       _platformAdapter = platformAdapter ?? const DefaultC2paPlatformAdapter();
 
   final C2paSignProcessRunner _processRunner;
   final C2paSignThumbnailGenerator _thumbnailGenerator;
@@ -74,31 +70,28 @@ class C2paTestSignService {
   final C2paManifestRemover _manifestRemover;
   final String? Function() _toolLocator;
   final C2paScopedFileAccess _scopedFileAccess;
+  final C2paPlatformAdapter _platformAdapter;
 
   Future<void> write(
     VideoClipInfo clip,
     String outputPath,
     C2paWriteMode mode,
   ) async {
-    if (MobileC2paService.isSupportedPlatform) {
+    if (_platformAdapter.usesNativeSdk) {
       try {
-        if (mode == C2paWriteMode.remove) {
-          await MobileC2paService.removeC2pa(clip.path, outputPath);
-        } else {
-          await MobileC2paService.signMedia(
-            clip.path,
-            outputPath,
-            mode: mode == C2paWriteMode.add
-                ? C2paWriteModeNative.add
-                : C2paWriteModeNative.replace,
-          );
-        }
+        await _platformAdapter.writeWithNativeSdk(
+          sourcePath: clip.path,
+          outputPath: outputPath,
+          mode: mode,
+        );
       } on UnsupportedError catch (error) {
         throw C2paTestSignException(
           error.message ?? 'Unsupported format on mobile.',
         );
       } on Object catch (error) {
-        throw C2paTestSignException('Could not complete mobile C2PA operation: $error');
+        throw C2paTestSignException(
+          'Could not complete mobile C2PA operation: $error',
+        );
       }
       return;
     }
