@@ -1,3 +1,7 @@
+<div style="text-align: center;">
+  <img src="assets_app_icon_128.png" width="128" height="128" alt="Perfect C2PA app icon">
+</div>
+
 # Perfect C2PA
 
 Perfect C2PA is a focused iOS, macOS, and Windows viewer for inspecting C2PA Content
