@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -497,6 +498,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
         key: const ValueKey<String>('c2pa-page-content'),
         backgroundColor: _c2paPageBackground,
         body: SafeArea(
+          bottom: false,
           child: DropTarget(
             onDragEntered: (_) => setState(() => _isDragging = true),
             onDragExited: (_) => setState(() => _isDragging = false),
@@ -600,7 +602,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                         _C2paFileLocationBar(path: _clip.path),
                       ],
                       Expanded(
-                        child: report != null
+                        // ClipRect prevents elastic-overscroll content from
+                        // bleeding above the tab bar / page header on macOS.
+                        child: ClipRect(
+                          child: report != null
                             ? TabBarView(
                                 controller: _tabController,
                                 // Mobile: lock swipe when on History tab and
@@ -637,11 +642,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                 child: const _C2paAwaitingMediaView(),
                               )
                             : _clip.aiMetadata.c2paStatus == C2paStatus.absent
-                            ? _C2paNoCredentialsView(
-                                clip: _clip,
-                                hideDropPrompt: _isDragging || Platform.isIOS || Platform.isAndroid,
-                              )
+                            ? _C2paNoCredentialsView(clip: _clip)
                             : _C2paUnavailableView(clip: _clip),
+                        ), // ClipRect
                       ),
                     ],
                   ),
@@ -879,14 +882,16 @@ class _C2paPageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = clip?.aiMetadata.c2paStatus;
     final compact = MediaQuery.sizeOf(context).width < 600;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        compact ? 12 : 20,
-        12,
-        compact ? 4 : 10,
-        _c2paSectionGap,
-      ),
-      child: Row(
+    return ColoredBox(
+      color: _c2paPageBackground,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 12 : 20,
+          12,
+          compact ? 4 : 10,
+          _c2paSectionGap,
+        ),
+        child: Row(
         children: <Widget>[
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -990,6 +995,7 @@ class _C2paPageHeader extends StatelessWidget {
             icon: const Icon(Icons.folder_open_outlined),
           ),
         ],
+        ),
       ),
     );
   }
@@ -1199,13 +1205,9 @@ class _C2paAwaitingMediaView extends StatelessWidget {
 }
 
 class _C2paNoCredentialsView extends StatelessWidget {
-  const _C2paNoCredentialsView({
-    required this.clip,
-    required this.hideDropPrompt,
-  });
+  const _C2paNoCredentialsView({required this.clip});
 
   final VideoClipInfo clip;
-  final bool hideDropPrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -1283,13 +1285,19 @@ class _C2paNoCredentialsView extends StatelessWidget {
               ],
             ),
           ),
-        const SizedBox(height: 24),
-        AnimatedOpacity(
-          key: const ValueKey<String>('c2pa-no-credentials-drop-prompt'),
-          duration: const Duration(milliseconds: 140),
-          opacity: hideDropPrompt ? 0 : 1,
-          child: const Center(child: _C2paDropPrompt()),
-        ),
+        // Other Metadata section (exif/video metadata, no C2PA needed)
+        if (clip.exifGroups.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 18),
+          Text(
+            'Other Metadata',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _ExifGroupsCard(groups: clip.exifGroups, shrinkWrap: isMobile),
+          const SizedBox(height: 6),
+        ],
       ],
     );
   }
@@ -1422,7 +1430,10 @@ class _C2paOverview extends StatelessWidget {
       shrinkWrap: isMobile,
     );
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
+      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
+      // Prevent elastic overscroll bounce on macOS/Windows from rendering
+      // list content above its bounds (into the header area).
+      physics: (!isMobile) ? const ClampingScrollPhysics() : null,
       children: <Widget>[
         // Mobile: thumbnail full-width 4:3, info cards stacked below.
         // Desktop: side-by-side row (unchanged).
@@ -1476,6 +1487,32 @@ class _C2paOverview extends StatelessWidget {
           ...manifest.actions.indexed.map(
             (entry) => _C2paActionTile(index: entry.$1, action: entry.$2),
           ),
+        // Other Metadata section
+        Builder(
+          builder: (context) {
+            final c2paGroup = _buildJumbfGroup(report);
+            final allGroups = <String, Map<String, String>>{
+              ...clip.exifGroups,
+              if (c2paGroup.isNotEmpty) 'JUMBF': c2paGroup,
+            };
+            if (allGroups.isEmpty) return const SizedBox.shrink();
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const SizedBox(height: 18),
+                Text(
+                  'Other Metadata',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _ExifGroupsCard(groups: allGroups, shrinkWrap: isMobile),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -1566,6 +1603,440 @@ class _C2paPreviewCardState extends State<_C2paPreviewCard> {
                 );
               },
             ),
+    );
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// JUMBF group builder – mirrors metadataview.com JUMBF output from rawJson
+// ---------------------------------------------------------------------------
+
+String _binaryFieldLabel(dynamic value) {
+  if (value is! String || value.isEmpty) return '$value';
+  final raw = value.replaceAll(RegExp(r'[^A-Za-z0-9+/]'), '');
+  final bytes = (raw.length * 3) ~/ 4;
+  if (bytes == 0) return '<binary>';
+  if (bytes < 1024) return '<binary, $bytes B> Show more';
+  return '<binary, ${(bytes / 1024).toStringAsFixed(1)} KB> Show more';
+}
+
+// Joins a list of nullable values as "v1, v2, null, v3"
+String _joinExclusionField(List<dynamic> exclusions, String field) {
+  return exclusions.map((e) {
+    final m = e as Map<String, dynamic>?;
+    if (m == null) return 'null';
+    final v = m[field];
+    if (v == null) return 'null';
+    if (v is List) return v.join(', ');
+    return '$v';
+  }).join(', ');
+}
+
+Map<String, String> _buildJumbfGroup(C2paReport report) {
+  final result = <String, String>{};
+  try {
+    final root = jsonDecode(report.rawJson) as Map<String, dynamic>;
+    final manifests = root['manifests'] as Map<String, dynamic>?;
+    final activeLabel =
+        (root['active_manifest'] as String?) ?? report.activeManifestLabel;
+    final manifest = manifests?[activeLabel] as Map<String, dynamic>?;
+    if (manifest == null) return result;
+
+    void add(String key, dynamic v) {
+      if (v != null && '$v'.isNotEmpty && v != 'null') result[key] = '$v';
+    }
+
+    // Signature info – Alg
+    final sig = manifest['signature_info'] as Map<String, dynamic>?;
+    add('Alg', sig?['alg']);
+
+    // C2PA JUMBF fixed metadata
+    result['JUMDType'] = '(c2pa)-0011-0010-800000aa00389b71';
+    result['JUMDLabel'] = 'c2pa';
+
+    // Signature reference: self#jumbf=/c2pa/{label}/c2pa.signature
+    result['Signature'] =
+        'self#jumbf=/c2pa/$activeLabel/c2pa.signature';
+
+    // InstanceID
+    add('InstanceID', manifest['instance_id']);
+
+    // claim_generator_info array
+    final cgInfoList = manifest['claim_generator_info'] as List<dynamic>?;
+    if (cgInfoList != null) {
+      for (int ci = 0; ci < cgInfoList.length; ci++) {
+        final cgi = cgInfoList[ci] as Map<String, dynamic>?;
+        if (cgi == null) continue;
+        final pfx = cgInfoList.length > 1
+            ? 'Claim_Generator_Info${ci + 1}'
+            : 'Claim_Generator_Info';
+        add('${pfx}Name', cgi['name']);
+        add('${pfx}Version', cgi['version']);
+        // flatten org map: org → Org, org.contentauth → OrgContentauth, etc.
+        final org = cgi['org'] as Map<String, dynamic>?;
+        if (org != null) {
+          void flattenOrg(Map<String, dynamic> m, String prefix) {
+            for (final e in m.entries) {
+              final sub = '$prefix${e.key[0].toUpperCase()}${e.key.substring(1)}';
+              if (e.value is Map<String, dynamic>) {
+                flattenOrg(e.value as Map<String, dynamic>, sub);
+              } else {
+                add('$pfx$sub', e.value);
+              }
+            }
+          }
+          flattenOrg(org, 'Org');
+        }
+      }
+    }
+
+    // created_assertions / gathered_assertions (claim-level assertion references)
+    void addAssertionRefs(String prefix, dynamic list) {
+      final refs = list as List<dynamic>?;
+      if (refs == null || refs.isEmpty) return;
+      for (int ri = 0; ri < refs.length; ri++) {
+        final ref = refs[ri] as Map<String, dynamic>?;
+        if (ref == null) continue;
+        final p = refs.length > 1 ? '$prefix${ri + 1}' : prefix;
+        add('${p}Url', ref['url']);
+        if (ref['hash'] != null)
+          result['${p}Hash'] = _binaryFieldLabel(ref['hash']);
+      }
+    }
+    addAssertionRefs('Created_Assertions', manifest['created_assertions']);
+    addAssertionRefs('Gathered_Assertions', manifest['gathered_assertions']);
+
+    // Assertions
+    final assertions = manifest['assertions'] as List<dynamic>? ?? [];
+    Map<String, dynamic>? hashData;
+    Map<String, dynamic>? hashBmff;
+    Map<String, dynamic>? actionsData;
+
+    for (final raw in assertions) {
+      final a = raw as Map<String, dynamic>?;
+      if (a == null) continue;
+      final label = a['label'] as String? ?? '';
+      final data = a['data'] as Map<String, dynamic>?;
+      if (data == null) continue;
+      if (label == 'c2pa.hash.data') hashData = data;
+      if (label.startsWith('c2pa.hash.bmff')) hashBmff = data;
+      if (label.startsWith('c2pa.actions')) actionsData = a;
+    }
+
+    // c2pa.hash.data fields
+    if (hashData != null) {
+      if (hashData['hash'] != null)
+        result['Hash'] = _binaryFieldLabel(hashData['hash']);
+      add('Name', hashData['name']);
+      if (hashData['pad'] != null)
+        result['Pad'] = _binaryFieldLabel(hashData['pad']);
+      final excls = hashData['exclusions'] as List<dynamic>?;
+      if (excls != null && excls.isNotEmpty) {
+        final ex = excls.first as Map<String, dynamic>?;
+        add('ExclusionsStart', ex?['start']);
+        add('ExclusionsLength', ex?['length']);
+      }
+      if (hashData['hash_salt'] != null)
+        result['C2PAHashDataSalt'] = _binaryFieldLabel(hashData['hash_salt']);
+    }
+
+    // c2pa.hash.bmff.v3 exclusions – each field joined across all exclusion objects
+    if (hashBmff != null) {
+      final excls = hashBmff['exclusions'] as List<dynamic>? ?? [];
+      if (excls.isNotEmpty) {
+        for (final field in const <String>[
+          'data', 'exact', 'flags', 'xpath',
+          'length', 'subset', 'version',
+        ]) {
+          final joined = _joinExclusionField(excls, field);
+          // Capitalise first letter to match exiftool naming
+          final key =
+              'Exclusions${field[0].toUpperCase()}${field.substring(1)}';
+          result[key] = joined;
+        }
+        // ExclusionsDataValue / ExclusionsDataOffset from exclusions with data
+        for (final ex in excls) {
+          final m = ex as Map<String, dynamic>?;
+          if (m == null) continue;
+          final d = m['data'] as Map<String, dynamic>?;
+          if (d != null) {
+            if (d['value'] != null)
+              result['ExclusionsDataValue'] =
+                  _binaryFieldLabel(d['value']);
+            add('ExclusionsDataOffset', d['offset']);
+            break;
+          }
+        }
+      }
+      if (hashBmff['salt'] != null)
+        result['C2PAHashBmffV3Salt'] =
+            _binaryFieldLabel(hashBmff['salt']);
+    }
+
+    // c2pa.actions
+    if (actionsData != null) {
+      final data = actionsData['data'] as Map<String, dynamic>?;
+      final actions = data?['actions'] as List<dynamic>? ?? [];
+      for (int i = 0; i < actions.length; i++) {
+        final act = actions[i] as Map<String, dynamic>?;
+        if (act == null) continue;
+        final prefix = actions.length > 1 ? 'Actions${i + 1}' : 'Actions';
+        add('${prefix}When', act['when']);
+        add('${prefix}Action', act['action']);
+        add('${prefix}DigitalSourceType', act['digitalSourceType']);
+        // softwareAgent may be a plain string or an object {name, version}
+        final sa = act['softwareAgent'];
+        if (sa is Map<String, dynamic>) {
+          add('${prefix}SoftwareAgentName', sa['name']);
+          add('${prefix}SoftwareAgentVersion', sa['version']);
+        } else if (sa != null) {
+          add('${prefix}SoftwareAgent', sa);
+        }
+        final params = act['parameters'] as Map<String, dynamic>?;
+        if (params != null) {
+          add('${prefix}ParametersName', params['name']);
+          add('${prefix}ParametersTime', params['time'] ?? params['dateTime']);
+          add('${prefix}ParametersLog_Id', params['log_id']);
+          add('${prefix}ParametersModel_Name', params['model_name']);
+          // any remaining scalar params not already handled
+          const _handledParams = <String>{
+            'name', 'time', 'dateTime', 'log_id', 'model_name',
+          };
+          for (final pe in params.entries) {
+            if (_handledParams.contains(pe.key)) continue;
+            if (pe.value is! Map && pe.value is! List) {
+              add(
+                '${prefix}Parameters'
+                '${pe.key[0].toUpperCase()}${pe.key.substring(1)}',
+                pe.value,
+              );
+            }
+          }
+        }
+      }
+      if (data?['salt'] != null)
+        result['C2PAActionsV2Salt'] =
+            _binaryFieldLabel(data!['salt']);
+    }
+  } catch (_) {}
+  return result;
+}
+
+class _ExifGroupsCard extends StatefulWidget {
+  const _ExifGroupsCard({required this.groups, this.shrinkWrap = false});
+
+  final Map<String, Map<String, String>> groups;
+  final bool shrinkWrap;
+
+  @override
+  State<_ExifGroupsCard> createState() => _ExifGroupsCardState();
+}
+
+class _ExifGroupsCardState extends State<_ExifGroupsCard> {
+  // Track which groups are expanded; all start collapsed except FILE.
+  late final Set<String> _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = <String>{'FILE'};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = widget.groups;
+    // Preferred display order
+    final ordered = const <String>[
+      'FILE', 'COMPOSITE', 'EXIF', 'GPS', 'IPTC', 'TIFF',
+      'JFIF', 'PNG', 'QuickTime', 'MakerApple', 'JUMBF',
+    ];
+    final keys = <String>[
+      ...ordered.where(groups.containsKey),
+      ...groups.keys.where((k) => !ordered.contains(k)),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _c2paCardBorder),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < keys.length; i++) ...<Widget>[
+            if (i > 0)
+              const Divider(height: 1, thickness: 1, color: _c2paCardBorder),
+            _ExifGroupTile(
+              name: keys[i],
+              entries: keys[i] == 'MakerApple'
+                  ? _remapMakerAppleKeys(groups[keys[i]]!)
+                  : groups[keys[i]]!,
+              expanded: _expanded.contains(keys[i]),
+              onToggle: () => setState(() {
+                if (_expanded.contains(keys[i])) {
+                  _expanded.remove(keys[i]);
+                } else {
+                  _expanded.add(keys[i]);
+                }
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Maps Apple MakerNote numeric tag IDs to human-readable names.
+  /// Unknown tags fall back to "Tag_N".
+  static Map<String, String> _remapMakerAppleKeys(Map<String, String> raw) {
+    const known = <String, String>{
+      '1': 'MakerNoteVersion',
+      '2': 'AEStable',
+      '3': 'AETarget',
+      '4': 'AEAverage',
+      '5': 'AFStable',
+      '6': 'AccelerationVector',
+      '8': 'HDRGain',
+      '14': 'FocusDistanceRange',
+      '17': 'BurstUUID',
+      '19': 'FocusDistanceRange2',
+      '23': 'OISMode',
+      '25': 'GreenGhostMitigation',
+      '29': 'MediaGroupUUID',
+      '31': 'ImageUniqueID',
+      '33': 'SigmaValue',
+      '35': 'FocusDistanceRange3',
+      '36': 'OISMode2',
+      '38': 'ContentIdentifier',
+      '39': 'ImageScale',
+      '41': 'DeviceType',
+      '43': 'CameraCalibrationData',
+      '44': 'ImageCaptureType',
+      '45': 'ImageProcessingFlags',
+      '46': 'SequenceNumber',
+      '47': 'MediaType',
+      '48': 'FrameIndex',
+      '49': 'ImageUniqueID2',
+      '57': 'SlowQuarterFrame',
+    };
+    return <String, String>{
+      for (final e in raw.entries)
+        (known[e.key] ?? 'Tag_${e.key}'): e.value,
+    };
+  }
+}
+
+class _ExifGroupTile extends StatelessWidget {
+  const _ExifGroupTile({
+    required this.name,
+    required this.entries,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final String name;
+  final Map<String, String> entries;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        // Group header – tappable to expand/collapse
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            child: Row(
+              children: <Widget>[
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    letterSpacing: 0.8,
+                    color: _c2paAccentDark,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: _c2paMutedText,
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Rows – shown when expanded
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final entry in entries.entries) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      // Key – fixed width, single line with ellipsis
+                      SizedBox(
+                        width: 130,
+                        child: Text(
+                          entry.key,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _c2paMutedText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      // Value – fills remaining space; tap to copy to clipboard
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: entry.value),
+                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Copied: ${entry.value}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  duration: const Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                  width: 320,
+                                ),
+                              );
+                            }
+                          },
+                          child: Text(
+                            entry.value,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -2071,6 +2542,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
             ),
           ),
         ),
+        SizedBox(height: MediaQuery.paddingOf(context).bottom),
       ],
     );
   }
@@ -2390,7 +2862,7 @@ class _C2paTechnicalView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
+      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
       children: <Widget>[
         Row(
           children: <Widget>[

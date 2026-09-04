@@ -165,6 +165,7 @@ class VideoClipInfo {
     required this.hasAudio,
     required this.mediaKind,
     this.aiMetadata = const AiMediaMetadata(),
+    this.exifGroups = const <String, Map<String, String>>{},
   });
 
   final String path;
@@ -175,6 +176,7 @@ class VideoClipInfo {
   final bool hasAudio;
   final MediaKind mediaKind;
   final AiMediaMetadata aiMetadata;
+  final Map<String, Map<String, String>> exifGroups;
 
   String get id => path;
   bool get isVideo => mediaKind == MediaKind.video;

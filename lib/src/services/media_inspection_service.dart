@@ -17,6 +17,44 @@ class MediaInspectionService {
   static const MethodChannel _mediaProbeChannel = MethodChannel(
     'c2pa_viewer/media_probe',
   );
+  static const MethodChannel _c2paNativeChannel = MethodChannel('c2pa_native');
+
+  // Probes file metadata (EXIF/GPS/QuickTime) grouped by namespace.
+  // Uses media_probe channel on macOS/Windows, c2pa_native on iOS/Android.
+  static Future<Map<String, Map<String, String>>> _probeExifMetadata(
+    String path,
+  ) async {
+    try {
+      final Map<Object?, Object?>? raw;
+      if (Platform.isIOS || Platform.isAndroid) {
+        raw = await _c2paNativeChannel.invokeMapMethod<Object?, Object?>(
+          'probeExifMetadata',
+          <String, Object?>{'path': path},
+        );
+      } else {
+        raw = await _mediaProbeChannel.invokeMapMethod<Object?, Object?>(
+          'probeExifMetadata',
+          <String, Object?>{'path': path},
+        );
+      }
+      if (raw == null) return const <String, Map<String, String>>{};
+      final result = <String, Map<String, String>>{};
+      for (final entry in raw.entries) {
+        final groupName = entry.key?.toString() ?? '';
+        final groupMap = entry.value;
+        if (groupMap is Map) {
+          result[groupName] = Map<String, String>.fromEntries(
+            groupMap.entries.map(
+              (e) => MapEntry(e.key.toString(), e.value.toString()),
+            ),
+          );
+        }
+      }
+      return result;
+    } catch (_) {
+      return const <String, Map<String, String>>{};
+    }
+  }
 
   final AiMetadataService aiMetadataService;
 
@@ -89,6 +127,7 @@ class MediaInspectionService {
           <String, Object?>{'path': path},
         ),
         aiMetadataService.probe(path),
+        _probeExifMetadata(path),
       ]);
       final media = results[0] as Map<String, Object?>?;
       if (media == null) {
@@ -109,6 +148,7 @@ class MediaInspectionService {
         hasAudio: media['hasAudio'] == true,
         mediaKind: media['isPhoto'] == true ? MediaKind.photo : MediaKind.video,
         aiMetadata: results[1] as AiMediaMetadata,
+        exifGroups: results[2] as Map<String, Map<String, String>>,
       );
     } finally {
       if (hasSecurityScopedAccess) {
@@ -158,6 +198,7 @@ class MediaInspectionService {
       }
     }
 
+    final exifGroups = await _probeExifMetadata(path);
     return VideoClipInfo(
       path: path,
       name: p.basename(path),
@@ -167,6 +208,7 @@ class MediaInspectionService {
       hasAudio: !isPhoto,
       mediaKind: isPhoto ? MediaKind.photo : MediaKind.video,
       aiMetadata: await aiMetadataService.probe(path),
+      exifGroups: exifGroups,
     );
   }
 }

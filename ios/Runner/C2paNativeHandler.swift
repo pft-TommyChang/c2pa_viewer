@@ -69,6 +69,8 @@ final class C2paNativeHandler: NSObject {
       readManifestWithResources(args: args, result: result)
     case "removeFile":
       removeFile(args: args, result: result)
+    case "probeExifMetadata":
+      probeExifMetadata(args: args, result: result)
     case "saveToPhotoLibrary":
       saveToPhotoLibrary(args: args, result: result)
     default:
@@ -396,6 +398,111 @@ final class C2paNativeHandler: NSObject {
         }
       }
     }
+  }
+
+  // MARK: - probeExifMetadata
+
+  private func probeExifMetadata(args: [String: Any], result: @escaping FlutterResult) {
+    guard let path = args["path"] as? String else {
+      complete(result, with: nil)
+      return
+    }
+    let url = URL(fileURLWithPath: path)
+    let ext = url.pathExtension.lowercased()
+    var groups: [String: [String: String]] = [:]
+
+    // FILE group
+    var fileGroup: [String: String] = ["FileName": url.lastPathComponent]
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+       let size = attrs[.size] as? Int {
+      let bytes = size
+      if bytes < 1024 { fileGroup["FileSize"] = "\(bytes) B" }
+      else if bytes < 1_048_576 { fileGroup["FileSize"] = String(format: "%.1f kB", Double(bytes)/1024) }
+      else { fileGroup["FileSize"] = String(format: "%.2f MB", Double(bytes)/1_048_576) }
+    }
+    fileGroup["FileTypeExtension"] = ext.isEmpty ? "unknown" : ext
+    let mimeMap: [String: (String, String)] = [
+      "jpg":("JPEG","image/jpeg"), "jpeg":("JPEG","image/jpeg"),
+      "png":("PNG","image/png"), "webp":("WebP","image/webp"),
+      "heic":("HEIC","image/heic"), "heif":("HEIF","image/heif"),
+      "mp4":("MP4","video/mp4"), "m4v":("M4V","video/mp4"),
+      "mov":("MOV","video/quicktime"),
+    ]
+    if let (ft, mime) = mimeMap[ext] {
+      fileGroup["FileType"] = ft; fileGroup["MIMEType"] = mime
+    }
+
+    let photoExts: Set<String> = ["jpg","jpeg","png","webp","heic","heif","tif","tiff"]
+    if photoExts.contains(ext) {
+      guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
+        groups["FILE"] = fileGroup
+        complete(result, with: groups)
+        return
+      }
+      let pw = props["PixelWidth"] as? Int ?? 0
+      let ph = props["PixelHeight"] as? Int ?? 0
+      if pw > 0 { fileGroup["ImageWidth"] = "\(pw)" }
+      if ph > 0 { fileGroup["ImageHeight"] = "\(ph)" }
+      if let depth = props["Depth"] as? Int { fileGroup["BitsPerSample"] = "\(depth)" }
+      if let comps = props["ColorComponents"] as? Int { fileGroup["ColorComponents"] = "\(comps)" }
+      groups["FILE"] = fileGroup
+
+      var composite: [String: String] = [:]
+      if pw > 0 && ph > 0 {
+        composite["ImageSize"] = "\(pw)x\(ph)"
+        composite["Megapixels"] = String(format: "%.3g", Double(pw * ph) / 1_000_000.0)
+      }
+      if let orient = props["Orientation"] as? Int { composite["Orientation"] = "\(orient)" }
+      groups["COMPOSITE"] = composite
+
+      let nsMap: [(String, String)] = [
+        ("{Exif}","EXIF"), ("{GPS}","GPS"), ("{IPTC}","IPTC"),
+        ("{TIFF}","TIFF"), ("{JFIF}","JFIF"), ("{PNG}","PNG"),
+        ("{MakerApple}","MakerApple"),
+      ]
+      for (ioKey, groupName) in nsMap {
+        guard let sub = props[ioKey] as? [String: Any], !sub.isEmpty else { continue }
+        var g: [String: String] = [:]
+        for (k, v) in sub {
+          if let arr = v as? [Any] { g[k] = arr.map { "\($0)" }.joined(separator: ", ") }
+          else { g[k] = "\(v)" }
+        }
+        groups[groupName] = g
+      }
+    } else {
+      let asset = AVURLAsset(url: url)
+      var composite: [String: String] = [:]
+      if let vt = asset.tracks(withMediaType: .video).first {
+        let sz = vt.naturalSize.applying(vt.preferredTransform)
+        let w = Int(abs(sz.width).rounded()); let h = Int(abs(sz.height).rounded())
+        if w > 0 && h > 0 {
+          fileGroup["ImageWidth"] = "\(w)"; fileGroup["ImageHeight"] = "\(h)"
+          composite["ImageSize"] = "\(w)x\(h)"
+          composite["Megapixels"] = String(format: "%.3g", Double(w*h)/1_000_000.0)
+        }
+        let fps = vt.nominalFrameRate
+        if fps > 0 { composite["VideoFrameRate"] = String(format: "%.3g fps", fps) }
+        let br = vt.estimatedDataRate
+        if br > 0 { composite["AvgBitrate"] = String(format: "%.1f Mbps", br/1_000_000.0) }
+        let t = vt.preferredTransform
+        if t.b == 1 && t.c == -1 { composite["Rotation"] = "90" }
+        else if t.b == -1 && t.c == 1 { composite["Rotation"] = "270" }
+        else if t.a == -1 && t.d == -1 { composite["Rotation"] = "180" }
+      }
+      let dur = CMTimeGetSeconds(asset.duration)
+      if dur > 0 && dur.isFinite { composite["Duration"] = String(format: "%.2f s", dur) }
+      groups["FILE"] = fileGroup; groups["COMPOSITE"] = composite
+
+      var qtGroup: [String: String] = [:]
+      for item in asset.commonMetadata {
+        guard let key = item.commonKey?.rawValue else { continue }
+        if let val = item.stringValue { qtGroup[key] = val }
+        else if let val = item.numberValue { qtGroup[key] = "\(val)" }
+      }
+      if !qtGroup.isEmpty { groups["QuickTime"] = qtGroup }
+    }
+    complete(result, with: groups)
   }
 
   // MARK: - readManifestWithResources

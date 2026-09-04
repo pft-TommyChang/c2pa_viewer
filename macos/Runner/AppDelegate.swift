@@ -62,6 +62,8 @@ class AppDelegate: FlutterAppDelegate {
         self?.probeMedia(path: path, result: result)
       case "thumbnailForMedia":
         self?.thumbnailForMedia(path: path, result: result)
+      case "probeExifMetadata":
+        self?.probeExifMetadata(path: path, result: result)
       case "removeC2paFromMedia":
         guard let outputPath = arguments["outputPath"] as? String else {
           result(
@@ -333,6 +335,123 @@ class AppDelegate: FlutterAppDelegate {
     default:
       return nil
     }
+  }
+
+  private func probeExifMetadata(path: String, result: @escaping FlutterResult) {
+    let url = URL(fileURLWithPath: path)
+    let ext = url.pathExtension.lowercased()
+    var groups: [String: [String: String]] = [:]
+
+    // FILE group from filesystem
+    var fileGroup: [String: String] = ["FileName": url.lastPathComponent]
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+       let size = attrs[.size] as? Int {
+      fileGroup["FileSize"] = formatBytes(size)
+    }
+    fileGroup["FileTypeExtension"] = ext.isEmpty ? "unknown" : ext
+    let mimeMap: [String: (String, String)] = [
+      "jpg": ("JPEG","image/jpeg"), "jpeg": ("JPEG","image/jpeg"),
+      "png": ("PNG","image/png"), "webp": ("WebP","image/webp"),
+      "heic": ("HEIC","image/heic"), "heif": ("HEIF","image/heif"),
+      "tif": ("TIFF","image/tiff"), "tiff": ("TIFF","image/tiff"),
+      "mp4": ("MP4","video/mp4"), "m4v": ("M4V","video/mp4"),
+      "mov": ("MOV","video/quicktime"),
+    ]
+    if let (ft, mime) = mimeMap[ext] {
+      fileGroup["FileType"] = ft
+      fileGroup["MIMEType"] = mime
+    }
+
+    let photoExts: Set<String> = ["jpg","jpeg","png","webp","heic","heif","tif","tiff"]
+    if photoExts.contains(ext) {
+      // Image: use ImageIO to extract all metadata groups
+      guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
+        groups["FILE"] = fileGroup
+        result(groups)
+        return
+      }
+      // Dimensions into FILE group
+      let pw = props["PixelWidth"] as? Int ?? 0
+      let ph = props["PixelHeight"] as? Int ?? 0
+      if pw > 0 { fileGroup["ImageWidth"] = "\(pw)" }
+      if ph > 0 { fileGroup["ImageHeight"] = "\(ph)" }
+      if let depth = props["Depth"] as? Int { fileGroup["BitsPerSample"] = "\(depth)" }
+      if let comps = props["ColorComponents"] as? Int { fileGroup["ColorComponents"] = "\(comps)" }
+      if let profile = props["ColorModel"] as? String { fileGroup["ColorSpace"] = profile }
+      groups["FILE"] = fileGroup
+
+      // COMPOSITE
+      var composite: [String: String] = [:]
+      if pw > 0 && ph > 0 {
+        composite["ImageSize"] = "\(pw)x\(ph)"
+        composite["Megapixels"] = String(format: "%.3g", Double(pw * ph) / 1_000_000.0)
+      }
+      if let orient = props["Orientation"] as? Int { composite["Orientation"] = "\(orient)" }
+      groups["COMPOSITE"] = composite
+
+      // Metadata namespaces
+      let nsMap: [(String, String)] = [
+        ("{Exif}","EXIF"), ("{GPS}","GPS"), ("{IPTC}","IPTC"),
+        ("{TIFF}","TIFF"), ("{JFIF}","JFIF"), ("{PNG}","PNG"),
+        ("{GIF}","GIF"), ("{DNG}","DNG"), ("{MakerApple}","MakerApple"),
+      ]
+      for (ioKey, groupName) in nsMap {
+        guard let sub = props[ioKey] as? [String: Any], !sub.isEmpty else { continue }
+        var g: [String: String] = [:]
+        for (k, v) in sub { g[k] = formatMetaValue(v) }
+        groups[groupName] = g
+      }
+    } else {
+      // Video: use AVFoundation
+      let asset = AVURLAsset(url: url)
+      var composite: [String: String] = [:]
+
+      if let videoTrack = asset.tracks(withMediaType: .video).first {
+        let size = videoTrack.naturalSize.applying(videoTrack.preferredTransform)
+        let w = Int(abs(size.width).rounded())
+        let h = Int(abs(size.height).rounded())
+        if w > 0 && h > 0 {
+          fileGroup["ImageWidth"] = "\(w)"
+          fileGroup["ImageHeight"] = "\(h)"
+          composite["ImageSize"] = "\(w)x\(h)"
+          composite["Megapixels"] = String(format: "%.3g", Double(w * h) / 1_000_000.0)
+        }
+        let fps = videoTrack.nominalFrameRate
+        if fps > 0 { composite["VideoFrameRate"] = String(format: "%.3g fps", fps) }
+        let bitrate = videoTrack.estimatedDataRate
+        if bitrate > 0 { composite["AvgBitrate"] = String(format: "%.1f Mbps", bitrate / 1_000_000.0) }
+        let t = videoTrack.preferredTransform
+        if t.b == 1 && t.c == -1 { composite["Rotation"] = "90" }
+        else if t.b == -1 && t.c == 1 { composite["Rotation"] = "270" }
+        else if t.a == -1 && t.d == -1 { composite["Rotation"] = "180" }
+      }
+      let dur = CMTimeGetSeconds(asset.duration)
+      if dur > 0 && dur.isFinite { composite["Duration"] = String(format: "%.2f s", dur) }
+      groups["FILE"] = fileGroup
+      groups["COMPOSITE"] = composite
+
+      // AVFoundation common metadata
+      var qtGroup: [String: String] = [:]
+      for item in asset.commonMetadata {
+        guard let key = item.commonKey?.rawValue else { continue }
+        if let val = item.stringValue { qtGroup[key] = val }
+        else if let val = item.numberValue { qtGroup[key] = "\(val)" }
+      }
+      if !qtGroup.isEmpty { groups["QuickTime"] = qtGroup }
+    }
+    result(groups)
+  }
+
+  private func formatBytes(_ n: Int) -> String {
+    if n < 1024 { return "\(n) B" }
+    if n < 1_048_576 { return String(format: "%.1f kB", Double(n) / 1024.0) }
+    return String(format: "%.2f MB", Double(n) / 1_048_576.0)
+  }
+
+  private func formatMetaValue(_ v: Any) -> String {
+    if let arr = v as? [Any] { return arr.map { "\($0)" }.joined(separator: ", ") }
+    return "\(v)"
   }
 
   private func probeError(code: String, path: String) -> FlutterError {
