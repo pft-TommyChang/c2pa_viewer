@@ -892,109 +892,105 @@ class _C2paPageHeader extends StatelessWidget {
           _c2paSectionGap,
         ),
         child: Row(
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.asset(
-              'assets/app_icon_1024.png',
-              width: compact ? 30 : 34,
-              height: compact ? 30 : 34,
-              fit: BoxFit.cover,
+          children: <Widget>[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset('assets/app_icon_1024.png',
+                width: compact ? 30 : 34, height: compact ? 30 : 34, fit: BoxFit.cover),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Content Credentials',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (!compact && versionLabel.isNotEmpty)
-                  Tooltip(
-                    message: availableUpdate != null
-                        ? 'Version ${availableUpdate!.version} available — click to open'
-                        : 'Open GitHub Releases',
-                    child: InkWell(
-                      key: const ValueKey<String>('open-release-page'),
-                      onTap: onUpdateTap,
-                      borderRadius: BorderRadius.circular(4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Text(
-                            versionLabel,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: _c2paMutedText,
-                                  fontSize: 10,
-                                  height: 1,
-                                ),
-                          ),
-                          if (availableUpdate != null) ...<Widget>[
-                            const SizedBox(width: 3),
-                            const Icon(
-                              Icons.error_rounded,
-                              key: ValueKey<String>(
-                                'update-available-indicator',
-                              ),
-                              size: 12,
-                              color: Color(0xFFE0523D),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  )
-                else if (!compact && clip == null)
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
                   Text(
-                    'Drop a media file anywhere on this page',
+                    'Content Credentials',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: _c2paMutedText),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-              ],
+                  if (!compact && versionLabel.isNotEmpty)
+                    Tooltip(
+                      message: availableUpdate != null
+                          ? 'Version ${availableUpdate!.version} available — click to open'
+                          : 'Open GitHub Releases',
+                      child: InkWell(
+                        key: const ValueKey<String>('open-release-page'),
+                        onTap: onUpdateTap,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              versionLabel,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: _c2paMutedText,
+                                    fontSize: 10,
+                                    height: 1,
+                                  ),
+                            ),
+                            if (availableUpdate != null) ...<Widget>[
+                              const SizedBox(width: 3),
+                              const Icon(
+                                Icons.error_rounded,
+                                key: ValueKey<String>(
+                                  'update-available-indicator',
+                                ),
+                                size: 12,
+                                color: Color(0xFFE0523D),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (!compact && clip == null)
+                    Text(
+                      'Drop a media file anywhere on this page',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: _c2paMutedText),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (!compact && status != null) _C2paStatusPill(status: status),
-          const SizedBox(width: 6),
-          IconButton(
-            key: const ValueKey<String>('test-sign-media'),
-            tooltip: 'Test sign current media',
-            onPressed: canTestSign ? onTestSign : null,
-            icon: isTestSigning
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.draw_outlined),
-          ),
-          if (!compact) ...<Widget>[
+            if (!compact && status != null) _C2paStatusPill(status: status),
+            const SizedBox(width: 6),
             IconButton(
-              tooltip: 'Previous file',
-              onPressed: canGoPrev ? onPrev : null,
-              icon: const Icon(Icons.chevron_left),
+              key: const ValueKey<String>('test-sign-media'),
+              tooltip: 'Test sign current media',
+              onPressed: canTestSign ? onTestSign : null,
+              icon: isTestSigning
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.draw_outlined),
             ),
+            if (!compact) ...<Widget>[
+              IconButton(
+                tooltip: 'Previous file',
+                onPressed: canGoPrev ? onPrev : null,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              IconButton(
+                tooltip: 'Next file',
+                onPressed: canGoNext ? onNext : null,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
             IconButton(
-              tooltip: 'Next file',
-              onPressed: canGoNext ? onNext : null,
-              icon: const Icon(Icons.chevron_right),
+              key: const ValueKey<String>('open-media-file'),
+              tooltip: 'Open media',
+              onPressed: onOpen,
+              icon: const Icon(Icons.folder_open_outlined),
             ),
           ],
-          IconButton(
-            key: const ValueKey<String>('open-media-file'),
-            tooltip: 'Open media',
-            onPressed: onOpen,
-            icon: const Icon(Icons.folder_open_outlined),
-          ),
-        ],
         ),
       ),
     );
@@ -1431,12 +1427,8 @@ class _C2paOverview extends StatelessWidget {
     );
     return ListView(
       padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
-      // Prevent elastic overscroll bounce on macOS/Windows from rendering
-      // list content above its bounds (into the header area).
-      physics: (!isMobile) ? const ClampingScrollPhysics() : null,
+      physics: !isMobile ? const ClampingScrollPhysics() : null,
       children: <Widget>[
-        // Mobile: thumbnail full-width 4:3, info cards stacked below.
-        // Desktop: side-by-side row (unchanged).
         if (isMobile) ...<Widget>[
           AspectRatio(
             aspectRatio: 4 / 3,
@@ -1700,8 +1692,9 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
         if (ref == null) continue;
         final p = refs.length > 1 ? '$prefix${ri + 1}' : prefix;
         add('${p}Url', ref['url']);
-        if (ref['hash'] != null)
+        if (ref['hash'] != null) {
           result['${p}Hash'] = _binaryFieldLabel(ref['hash']);
+        }
       }
     }
     addAssertionRefs('Created_Assertions', manifest['created_assertions']);
@@ -1726,19 +1719,22 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
 
     // c2pa.hash.data fields
     if (hashData != null) {
-      if (hashData['hash'] != null)
+      if (hashData['hash'] != null) {
         result['Hash'] = _binaryFieldLabel(hashData['hash']);
+      }
       add('Name', hashData['name']);
-      if (hashData['pad'] != null)
+      if (hashData['pad'] != null) {
         result['Pad'] = _binaryFieldLabel(hashData['pad']);
+      }
       final excls = hashData['exclusions'] as List<dynamic>?;
       if (excls != null && excls.isNotEmpty) {
         final ex = excls.first as Map<String, dynamic>?;
         add('ExclusionsStart', ex?['start']);
         add('ExclusionsLength', ex?['length']);
       }
-      if (hashData['hash_salt'] != null)
+      if (hashData['hash_salt'] != null) {
         result['C2PAHashDataSalt'] = _binaryFieldLabel(hashData['hash_salt']);
+      }
     }
 
     // c2pa.hash.bmff.v3 exclusions – each field joined across all exclusion objects
@@ -1761,17 +1757,17 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
           if (m == null) continue;
           final d = m['data'] as Map<String, dynamic>?;
           if (d != null) {
-            if (d['value'] != null)
-              result['ExclusionsDataValue'] =
-                  _binaryFieldLabel(d['value']);
+            if (d['value'] != null) {
+              result['ExclusionsDataValue'] = _binaryFieldLabel(d['value']);
+            }
             add('ExclusionsDataOffset', d['offset']);
             break;
           }
         }
       }
-      if (hashBmff['salt'] != null)
-        result['C2PAHashBmffV3Salt'] =
-            _binaryFieldLabel(hashBmff['salt']);
+      if (hashBmff['salt'] != null) {
+        result['C2PAHashBmffV3Salt'] = _binaryFieldLabel(hashBmff['salt']);
+      }
     }
 
     // c2pa.actions
@@ -1800,11 +1796,11 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
           add('${prefix}ParametersLog_Id', params['log_id']);
           add('${prefix}ParametersModel_Name', params['model_name']);
           // any remaining scalar params not already handled
-          const _handledParams = <String>{
+          const handledParams = <String>{
             'name', 'time', 'dateTime', 'log_id', 'model_name',
           };
           for (final pe in params.entries) {
-            if (_handledParams.contains(pe.key)) continue;
+            if (handledParams.contains(pe.key)) continue;
             if (pe.value is! Map && pe.value is! List) {
               add(
                 '${prefix}Parameters'
@@ -1815,9 +1811,9 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
           }
         }
       }
-      if (data?['salt'] != null)
-        result['C2PAActionsV2Salt'] =
-            _binaryFieldLabel(data!['salt']);
+      if (data?['salt'] != null) {
+        result['C2PAActionsV2Salt'] = _binaryFieldLabel(data!['salt']);
+      }
     }
   } catch (_) {}
   return result;
@@ -1987,7 +1983,6 @@ class _ExifGroupTile extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      // Key – fixed width, single line with ellipsis
                       SizedBox(
                         width: 130,
                         child: Text(
@@ -2000,26 +1995,18 @@ class _ExifGroupTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Value – fills remaining space; tap to copy to clipboard
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            await Clipboard.setData(
-                              ClipboardData(text: entry.value),
-                            );
+                            await Clipboard.setData(ClipboardData(text: entry.value));
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Copied: ${entry.value}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  duration: const Duration(seconds: 2),
-                                  behavior: SnackBarBehavior.floating,
-                                  width: 320,
-                                ),
-                              );
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('Copied: ${entry.value}',
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                                width: 320,
+                              ));
                             }
                           },
                           child: Text(
