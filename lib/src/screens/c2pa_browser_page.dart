@@ -38,6 +38,9 @@ const Set<String> _supportedPhotoExtensions = <String>{
 };
 
 const Color _c2paPageBackground = Color(0xFFFFFCF7);
+
+// True on iOS/Android — use long-press; desktop uses double-tap.
+bool get _isMobile => Platform.isIOS || Platform.isAndroid;
 const Color _c2paPanelBackground = Color(0xFFF3EFE7);
 const Color _c2paCardBorder = Color(0xFFD8D0C4);
 const Color _c2paMutedText = Color(0xFF697180);
@@ -1249,7 +1252,7 @@ class _C2paNoCredentialsView extends StatelessWidget {
       ),
     );
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18),
+      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
       children: <Widget>[
         // Mobile: 4:3 full-width thumbnail then info card below (same pattern
         // as _C2paOverview). Desktop: side-by-side row at fixed height.
@@ -1983,21 +1986,47 @@ class _ExifGroupTile extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      SizedBox(
-                        width: 130,
-                        child: Text(
-                          entry.key,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _c2paMutedText,
-                            fontSize: 12,
+                      GestureDetector(
+                        onDoubleTap: _isMobile ? null : () async {
+                          await Clipboard.setData(ClipboardData(text: entry.key));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Copied: ${entry.key}',
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                              width: 320,
+                            ));
+                          }
+                        },
+                        onLongPress: _isMobile ? () async {
+                          await Clipboard.setData(ClipboardData(text: entry.key));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Copied: ${entry.key}',
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                              width: 320,
+                            ));
+                          }
+                        } : null,
+                        child: SizedBox(
+                          width: 130,
+                          child: Text(
+                            entry.key,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _c2paMutedText,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () async {
+                          onDoubleTap: _isMobile ? null : () async {
                             await Clipboard.setData(ClipboardData(text: entry.value));
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2009,6 +2038,18 @@ class _ExifGroupTile extends StatelessWidget {
                               ));
                             }
                           },
+                          onLongPress: _isMobile ? () async {
+                            await Clipboard.setData(ClipboardData(text: entry.value));
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('Copied: ${entry.value}',
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                                width: 320,
+                              ));
+                            }
+                          } : null,
                           child: Text(
                             entry.value,
                             maxLines: 1,
@@ -2045,48 +2086,90 @@ class _C2paInfoCard extends StatelessWidget {
   final List<(String, String?)> rows;
   final bool shrinkWrap;
 
-  List<Widget> _buildRows(bool compact) {
+  List<Widget> _buildRows(BuildContext context) {
     final visibleRows = rows.where((row) => row.$2 != null).toList();
     return <Widget>[
       for (int i = 0; i < visibleRows.length; i++) ...<Widget>[
         if (i > 0) const SizedBox(height: 8),
-        if (compact)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text.rich(
-              TextSpan(
-                children: <InlineSpan>[
-                  TextSpan(
-                    text: '${visibleRows[i].$1}: ',
-                    style: const TextStyle(color: _c2paMutedText, fontSize: 11),
-                  ),
-                  TextSpan(text: visibleRows[i].$2!),
-                ],
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          )
-        else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              SizedBox(
+        // Compact and non-compact both use a Row so key/value can be
+        // long-pressed independently to copy each one.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            GestureDetector(
+              onDoubleTap: _isMobile ? null : () async {
+                await Clipboard.setData(ClipboardData(text: visibleRows[i].$1));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Copied: ${visibleRows[i].$1}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                    width: 320,
+                  ));
+                }
+              },
+              onLongPress: _isMobile ? () async {
+                await Clipboard.setData(ClipboardData(text: visibleRows[i].$1));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Copied: ${visibleRows[i].$1}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                    width: 320,
+                  ));
+                }
+              } : null,
+              child: SizedBox(
                 width: 94,
                 child: Text(
                   visibleRows[i].$1,
-                  style: const TextStyle(color: _c2paMutedText, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _c2paMutedText,
+                    fontSize: 12,
+                  ),
                 ),
               ),
-              Expanded(
+            ),
+            Expanded(
+              child: GestureDetector(
+                onDoubleTap: _isMobile ? null : () async {
+                  await Clipboard.setData(ClipboardData(text: visibleRows[i].$2!));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Copied: ${visibleRows[i].$2!}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                      width: 320,
+                    ));
+                  }
+                },
+                onLongPress: _isMobile ? () async {
+                  await Clipboard.setData(ClipboardData(text: visibleRows[i].$2!));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Copied: ${visibleRows[i].$2!}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      duration: const Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                      width: 320,
+                    ));
+                  }
+                } : null,
                 child: Text(
                   visibleRows[i].$2!,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
       ],
     ];
   }
@@ -2119,23 +2202,19 @@ class _C2paInfoCard extends StatelessWidget {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _buildRows(constraints.maxWidth < 240),
+                  children: _buildRows(context),
                 );
               },
             )
           else
-            // Keep long metadata readable instead of overflowing fixed-height cards.
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 240;
-                  return SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _buildRows(compact),
-                    ),
-                  );
-                },
+              child: Builder(
+                builder: (context) => SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _buildRows(context),
+                  ),
+                ),
               ),
             ),
         ],
