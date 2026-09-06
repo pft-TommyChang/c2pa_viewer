@@ -71,6 +71,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/app_icon_1024.png
+    - assets/app_icon_nobg.png
     - assets/c2pa/perfect_collage_cert.pem
     - assets/c2pa/perfect_collage_private.key
     - assets/c2pa/perfect_collage_private_pkcs8.key

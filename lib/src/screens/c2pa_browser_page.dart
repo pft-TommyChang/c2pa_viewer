@@ -288,6 +288,32 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
     }
   }
 
+  // Pick media from the Files app (system document picker).
+  Future<void> _pickMediaFromFiles() async {
+    // iOS requires uniformTypeIdentifiers; extensions alone cause an exception.
+    final file = await openFile(
+      acceptedTypeGroups: <XTypeGroup>[
+        if (Platform.isIOS)
+          const XTypeGroup(
+            label: 'Photos and videos',
+            uniformTypeIdentifiers: <String>[
+              'public.image',
+              'public.movie',
+            ],
+          )
+        else
+          const XTypeGroup(
+            label: 'Photos and videos',
+            extensions: <String>[
+              'mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm',
+              'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif',
+            ],
+          ),
+      ],
+    );
+    if (file != null) await _inspectPath(file.path);
+  }
+
   // Push path onto history, truncating any forward entries.
   void _pushPath(String path) {
     if (_historyIndex < _history.length - 1) {
@@ -513,6 +539,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                       _C2paPageHeader(
                         clip: _hasMedia ? _clip : null,
                         onOpen: () => unawaited(_pickMedia()),
+                        onOpenFromFiles: Platform.isIOS || Platform.isAndroid
+                            ? () => unawaited(_pickMediaFromFiles())
+                            : null,
                         onTestSign: () => unawaited(_testSignCurrentMedia()),
                         canTestSign:
                             _hasMedia &&
@@ -546,12 +575,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                       if (_hasMedia)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                          child: IgnorePointer(
-                            ignoring: report == null,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 200),
-                              opacity: report == null ? 0.35 : 1.0,
-                              child: Material(
+                          child: Material(
                                 color: _c2paPanelBackground,
                                 borderRadius: BorderRadius.circular(14),
                                 clipBehavior: Clip.antiAlias,
@@ -597,8 +621,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
                         ),
                       if (_hasMedia) ...<Widget>[
                         const SizedBox(height: _c2paSectionGap),
@@ -608,8 +630,16 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                         // ClipRect prevents elastic-overscroll content from
                         // bleeding above the tab bar / page header on macOS.
                         child: ClipRect(
-                          child: report != null
-                            ? TabBarView(
+                          child: !_hasMedia
+                            ? AnimatedOpacity(
+                                duration: const Duration(milliseconds: 140),
+                                opacity: _isDragging ? 0 : 1,
+                                child: _C2paAwaitingMediaView(
+                          onTap: _pickMedia,
+                          onTapFiles: _pickMediaFromFiles,
+                        ),
+                              )
+                            : TabBarView(
                                 controller: _tabController,
                                 // Mobile: lock swipe when on History tab and
                                 // not fit-mode, so InteractiveViewer pan wins.
@@ -637,16 +667,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                   ),
                                   _C2paTechnicalView(report: report),
                                 ],
-                              )
-                            : !_hasMedia
-                            ? AnimatedOpacity(
-                                duration: const Duration(milliseconds: 140),
-                                opacity: _isDragging ? 0 : 1,
-                                child: const _C2paAwaitingMediaView(),
-                              )
-                            : _clip.aiMetadata.c2paStatus == C2paStatus.absent
-                            ? _C2paNoCredentialsView(clip: _clip)
-                            : _C2paUnavailableView(clip: _clip),
+                              ),
                         ), // ClipRect
                       ),
                     ],
@@ -778,7 +799,7 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
         width: 480,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             const Text('Select the C2PA operation to apply.'),
             if (widget.mobileNative) ...const <Widget>[
@@ -856,6 +877,7 @@ class _C2paPageHeader extends StatelessWidget {
   const _C2paPageHeader({
     required this.clip,
     required this.onOpen,
+    this.onOpenFromFiles,
     required this.onTestSign,
     required this.canTestSign,
     required this.isTestSigning,
@@ -870,6 +892,7 @@ class _C2paPageHeader extends StatelessWidget {
 
   final VideoClipInfo? clip;
   final VoidCallback onOpen;
+  final VoidCallback? onOpenFromFiles;
   final VoidCallback onTestSign;
   final bool canTestSign;
   final bool isTestSigning;
@@ -898,7 +921,7 @@ class _C2paPageHeader extends StatelessWidget {
           children: <Widget>[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.asset('assets/app_icon_1024.png',
+              child: Image.asset('assets/app_icon_nobg.png',
                 width: compact ? 30 : 34, height: compact ? 30 : 34, fit: BoxFit.cover),
             ),
             const SizedBox(width: 12),
@@ -987,12 +1010,63 @@ class _C2paPageHeader extends StatelessWidget {
                 icon: const Icon(Icons.chevron_right),
               ),
             ],
-            IconButton(
-              key: const ValueKey<String>('open-media-file'),
-              tooltip: 'Open media',
-              onPressed: onOpen,
-              icon: const Icon(Icons.folder_open_outlined),
-            ),
+            // On mobile: tap = Camera Roll, long press = show menu
+            if (onOpenFromFiles != null)
+              GestureDetector(
+                  onTap: onOpen,
+                  onLongPress: () async {
+                    final iconBox = context.findRenderObject() as RenderBox?;
+                    if (iconBox == null) return;
+                    final pos = iconBox.localToGlobal(Offset.zero);
+                    final size = iconBox.size;
+                    final screenW = MediaQuery.of(context).size.width;
+                    final choice = await showMenu<String>(
+                      context: context,
+                      position: RelativeRect.fromLTRB(
+                        // Anchor right edge of menu to right edge of button
+                        screenW,
+                        pos.dy + size.height,
+                        screenW - (pos.dx + size.width),
+                        pos.dy + size.height + 4,
+                      ),
+                      items: const <PopupMenuEntry<String>>[
+                        PopupMenuItem<String>(
+                          value: 'camera_roll',
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.photo_library_outlined, size: 20),
+                              SizedBox(width: 10),
+                              Text('Camera Roll'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'files',
+                          child: Row(
+                            children: <Widget>[
+                              Icon(Icons.folder_open_outlined, size: 20),
+                              SizedBox(width: 10),
+                              Text('Files'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                    if (choice == 'camera_roll') onOpen();
+                    if (choice == 'files') onOpenFromFiles!();
+                  },
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.folder_open_outlined),
+                ),
+              )
+            else
+              IconButton(
+                key: const ValueKey<String>('open-media-file'),
+                tooltip: 'Open media',
+                onPressed: onOpen,
+                icon: const Icon(Icons.folder_open_outlined),
+              ),
           ],
         ),
       ),
@@ -1020,7 +1094,7 @@ class _C2paFileLocationBar extends StatelessWidget {
     return Container(
       key: const ValueKey<String>('c2pa-file-location'),
       margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: _c2paCardBorder),
@@ -1028,10 +1102,24 @@ class _C2paFileLocationBar extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          const Icon(
-            Icons.insert_drive_file_outlined,
-            size: 20,
-            color: _c2paAccentDark,
+          // Square thumbnail with center crop; falls back to file icon for video.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(path),
+              width: 34,
+              height: 34,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => SizedBox(
+                width: 34,
+                height: 34,
+                child: Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 20,
+                  color: _c2paAccentDark,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1151,12 +1239,98 @@ String _formatFileSize(int bytes) {
 }
 
 class _C2paDropPrompt extends StatelessWidget {
-  const _C2paDropPrompt({this.prominent = false});
+  const _C2paDropPrompt({
+    this.prominent = false,
+    this.onTap,
+    this.onTapFiles,
+  });
 
   final bool prominent;
+  final VoidCallback? onTap;       // Camera Roll
+  final VoidCallback? onTapFiles;  // Files app
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+    final iconSize = prominent ? 44.0 : 36.0;
+
+    // Mobile: bold title + two icon-text buttons
+    Widget content;
+    if (isMobile) {
+      Widget sourceBtn(IconData icon, String label, VoidCallback? onPressed) {
+        return Expanded(
+          child: GestureDetector(
+            onTap: onPressed,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: _c2paAccentDark.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(icon, size: 28, color: _c2paAccentDark),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: _c2paAccentDark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              'Select a photo or video',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: <Widget>[
+              sourceBtn(Icons.photo_library_outlined, 'Camera Roll', onTap),
+              const SizedBox(width: 12),
+              sourceBtn(Icons.folder_open_outlined, 'Files', onTapFiles),
+            ],
+          ),
+        ],
+      );
+    } else {
+      // Desktop: single download icon + drop hint text
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.file_download_outlined,
+              size: iconSize, color: _c2paAccentDark),
+          const SizedBox(height: 10),
+          Text(
+            'Drop media to inspect Content Credentials',
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ],
+      );
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: _c2paPageBackground.withValues(alpha: 0.94),
@@ -1169,37 +1343,63 @@ class _C2paDropPrompt extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.file_download_outlined,
-              size: prominent ? 44 : 36,
-              color: _c2paAccentDark,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              Platform.isIOS || Platform.isAndroid
-                  ? 'Tap the folder button to inspect a photo'
-                  : 'Drop media to inspect Content Credentials',
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ],
-        ),
+        child: content,
+      ),
+    );
+  }
+}
+
+// Empty state shown inside History / Check tabs when there is no C2PA report.
+class _C2paTabEmptyState extends StatelessWidget {
+  const _C2paTabEmptyState({
+    required this.icon,
+    required this.message,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String message;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 40, color: _c2paMutedText),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(color: _c2paMutedText),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _C2paAwaitingMediaView extends StatelessWidget {
-  const _C2paAwaitingMediaView();
+  const _C2paAwaitingMediaView({this.onTap, this.onTapFiles});
+
+  final VoidCallback? onTap;
+  final VoidCallback? onTapFiles;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: _C2paDropPrompt());
+    // Position the prompt above center (~1/3 from top) on mobile.
+    return Align(
+      alignment: const Alignment(0, -0.2),
+      child: _C2paDropPrompt(onTap: onTap, onTapFiles: onTapFiles),
+    );
   }
 }
 
@@ -1383,11 +1583,17 @@ class _C2paOverview extends StatelessWidget {
   });
 
   final VideoClipInfo clip;
-  final C2paReport report;
+  final C2paReport? report;
   final VideoPlayerController? controller;
 
   @override
   Widget build(BuildContext context) {
+    final report = this.report; // promote to non-nullable via flow analysis
+    if (report == null) {
+      return clip.aiMetadata.c2paStatus == C2paStatus.absent
+          ? _C2paNoCredentialsView(clip: clip)
+          : _C2paUnavailableView(clip: clip);
+    }
     final manifest = report.activeManifest;
     final isMobile = Platform.isIOS || Platform.isAndroid;
     // Reusable card widgets (keys must be stable across layouts).
@@ -2295,7 +2501,7 @@ class _C2paHistoryTree extends StatefulWidget {
   });
 
   final VideoClipInfo clip;
-  final C2paReport report;
+  final C2paReport? report;
   // Notifies parent of zoom mode changes so it can adjust TabBarView physics.
   final void Function(_ZoomMode mode)? onZoomModeChanged;
 
@@ -2330,7 +2536,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
   void didUpdateWidget(_C2paHistoryTree old) {
     super.didUpdateWidget(old);
     if (old.clip.path != widget.clip.path ||
-        old.report.activeManifestLabel != widget.report.activeManifestLabel) {
+        old.report?.activeManifestLabel != widget.report?.activeManifestLabel) {
       // New file — re-apply mode after layout settles.
       WidgetsBinding.instance.addPostFrameCallback((_) => _applyMode());
     }
@@ -2488,17 +2694,25 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
 
   @override
   Widget build(BuildContext context) {
-    final root = widget.report.activeManifest;
+    final report = widget.report; // promote to non-nullable via flow analysis
+    if (report == null) {
+      return const _C2paTabEmptyState(
+        icon: Icons.account_tree_outlined,
+        message: 'No provenance history',
+        subtitle: 'This file has no Content Credentials.',
+      );
+    }
+    final root = report.activeManifest;
     if (root == null) {
       return const Center(child: Text('No manifest history found.'));
     }
     final manifestMap = <String, C2paManifest>{
-      for (final item in widget.report.manifests) item.label: item,
+      for (final item in report.manifests) item.label: item,
     };
     final nodes = _buildC2paTreeNodes(
       root,
       manifestMap,
-      widget.report.activeManifestLabel,
+      report.activeManifestLabel,
       p.basename(widget.clip.path),
     );
     final levelCount = nodes.fold<int>(
@@ -2923,10 +3137,18 @@ class _C2paTreeConnectorPainter extends CustomPainter {
 class _C2paTechnicalView extends StatelessWidget {
   const _C2paTechnicalView({required this.report});
 
-  final C2paReport report;
+  final C2paReport? report;
 
   @override
   Widget build(BuildContext context) {
+    final report = this.report; // promote to non-nullable via flow analysis
+    if (report == null) {
+      return const _C2paTabEmptyState(
+        icon: Icons.fact_check_outlined,
+        message: 'No validation checks',
+        subtitle: 'This file has no Content Credentials.',
+      );
+    }
     return ListView(
       padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
       children: <Widget>[
