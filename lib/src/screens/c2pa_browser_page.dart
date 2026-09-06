@@ -689,17 +689,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                       ),
                     ),
                   ),
-                  // Thin progress bar while switching files (old content stays visible)
-                  if (_isParsing && _hasMedia)
-                    const Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: LinearProgressIndicator(
-                        key: ValueKey<String>('c2pa-nav-progress'),
-                        minHeight: 2,
-                      ),
-                    ),
                   // Full overlay with spinner only on the very first load
                   if (_isParsing && !_hasMedia)
                     const Positioned.fill(
@@ -1144,31 +1133,48 @@ class _C2paFileLocationBarState extends State<_C2paFileLocationBar> {
       ),
       child: Row(
         children: <Widget>[
-          // Gapless thumbnail: old bytes held until new ones arrive — no flash.
+          // Fixed-size thumbnail — always 34×34 so layout never shifts.
+          // Videos: show placeholder icon while bytes load, then crossfade to
+          // the real frame; images: decode from file with error fallback.
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: _thumbBytes != null
-                ? Image.memory(
-                    _thumbBytes!,
-                    width: 34,
-                    height: 34,
-                    fit: BoxFit.cover,
-                  )
-                : Image.file(
+            child: SizedBox(
+              width: 34,
+              height: 34,
+              child: Builder(
+                builder: (context) {
+                  final ext = p.extension(path).toLowerCase();
+                  final isVideo = _supportedVideoExtensions.contains(ext);
+                  if (_thumbBytes != null) {
+                    return Image.memory(
+                      _thumbBytes!,
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.cover,
+                    );
+                  }
+                  if (isVideo) {
+                    // Thumbnail still loading — show stable placeholder
+                    return const Icon(
+                      Icons.movie_outlined,
+                      size: 20,
+                      color: _c2paAccentDark,
+                    );
+                  }
+                  return Image.file(
                     File(path),
                     width: 34,
                     height: 34,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stack) => const SizedBox(
-                      width: 34,
-                      height: 34,
-                      child: Icon(
-                        Icons.insert_drive_file_outlined,
-                        size: 20,
-                        color: _c2paAccentDark,
-                      ),
+                    errorBuilder: (context, error, stack) => const Icon(
+                      Icons.insert_drive_file_outlined,
+                      size: 20,
+                      color: _c2paAccentDark,
                     ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
