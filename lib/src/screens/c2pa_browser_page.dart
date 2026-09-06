@@ -1015,6 +1015,7 @@ class _C2paPageHeader extends StatelessWidget {
               GestureDetector(
                   onTap: onOpen,
                   onLongPress: () async {
+                    HapticFeedback.mediumImpact();
                     final iconBox = context.findRenderObject() as RenderBox?;
                     if (iconBox == null) return;
                     final pos = iconBox.localToGlobal(Offset.zero);
@@ -1074,13 +1075,54 @@ class _C2paPageHeader extends StatelessWidget {
   }
 }
 
-class _C2paFileLocationBar extends StatelessWidget {
+class _C2paFileLocationBar extends StatefulWidget {
   const _C2paFileLocationBar({required this.path});
 
   final String path;
 
   @override
+  State<_C2paFileLocationBar> createState() => _C2paFileLocationBarState();
+}
+
+class _C2paFileLocationBarState extends State<_C2paFileLocationBar> {
+  // Holds the last successfully loaded video thumbnail bytes.
+  // Not cleared on path change — old image stays visible until new one
+  // arrives, giving a gapless crossfade between files.
+  Uint8List? _thumbBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchThumb(widget.path);
+  }
+
+  @override
+  void didUpdateWidget(_C2paFileLocationBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      // For photos: clear stale video bytes immediately.
+      // For videos: keep _thumbBytes so old frame stays visible while
+      //             the new thumbnail loads (gapless transition).
+      final ext = p.extension(widget.path).toLowerCase();
+      if (!_supportedVideoExtensions.contains(ext)) {
+        setState(() => _thumbBytes = null);
+      }
+      _fetchThumb(widget.path);
+    }
+  }
+
+  Future<void> _fetchThumb(String filePath) async {
+    final ext = p.extension(filePath).toLowerCase();
+    if (!_supportedVideoExtensions.contains(ext)) return;
+    final bytes = await MediaInspectionService.thumbnail(filePath);
+    if (mounted && filePath == widget.path && bytes != null) {
+      setState(() => _thumbBytes = bytes);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final path = widget.path;
     int? fileSize;
     try {
       fileSize = File(path).lengthSync();
@@ -1102,24 +1144,31 @@ class _C2paFileLocationBar extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          // Square thumbnail with center crop; falls back to file icon for video.
+          // Gapless thumbnail: old bytes held until new ones arrive — no flash.
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.file(
-              File(path),
-              width: 34,
-              height: 34,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => SizedBox(
-                width: 34,
-                height: 34,
-                child: Icon(
-                  Icons.insert_drive_file_outlined,
-                  size: 20,
-                  color: _c2paAccentDark,
-                ),
-              ),
-            ),
+            child: _thumbBytes != null
+                ? Image.memory(
+                    _thumbBytes!,
+                    width: 34,
+                    height: 34,
+                    fit: BoxFit.cover,
+                  )
+                : Image.file(
+                    File(path),
+                    width: 34,
+                    height: 34,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => const SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: Icon(
+                        Icons.insert_drive_file_outlined,
+                        size: 20,
+                        color: _c2paAccentDark,
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1730,23 +1779,32 @@ class _C2paPreviewCard extends StatefulWidget {
 }
 
 class _C2paPreviewCardState extends State<_C2paPreviewCard> {
-  Future<Uint8List?>? _thumbnailFuture;
+  // Last successfully decoded thumbnail — held across file switches so
+  // the old frame shows while the next thumbnail is loading (gapless).
+  Uint8List? _thumb;
 
   @override
   void initState() {
     super.initState();
-    if (!widget.clip.isPhoto) {
-      _thumbnailFuture = MediaInspectionService.thumbnail(widget.clip.path);
-    }
+    if (!widget.clip.isPhoto) _fetchThumb(widget.clip.path);
   }
 
   @override
   void didUpdateWidget(_C2paPreviewCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.clip.path != widget.clip.path) {
-      _thumbnailFuture = widget.clip.isPhoto
-          ? null
-          : MediaInspectionService.thumbnail(widget.clip.path);
+      if (widget.clip.isPhoto) {
+        setState(() => _thumb = null); // photos use Image.file
+      } else {
+        _fetchThumb(widget.clip.path); // keep _thumb until new bytes arrive
+      }
+    }
+  }
+
+  Future<void> _fetchThumb(String filePath) async {
+    final bytes = await MediaInspectionService.thumbnail(filePath);
+    if (mounted && filePath == widget.clip.path && bytes != null) {
+      setState(() => _thumb = bytes);
     }
   }
 
@@ -1764,7 +1822,7 @@ class _C2paPreviewCardState extends State<_C2paPreviewCard> {
           ? Image.file(
               File(clip.path),
               fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const Icon(
+              errorBuilder: (_, e, s) => const Icon(
                 Icons.image_not_supported_outlined,
                 color: Colors.white54,
               ),
@@ -1788,21 +1846,15 @@ class _C2paPreviewCardState extends State<_C2paPreviewCard> {
                 ),
               ],
             )
-          : FutureBuilder<Uint8List?>(
-              future: _thumbnailFuture,
-              builder: (context, snapshot) {
-                final data = snapshot.data;
-                if (data != null) {
-                  return Image.memory(data, fit: BoxFit.contain);
-                }
-                return const Center(
-                  child: Icon(
-                    Icons.movie_outlined,
-                    size: 56,
-                    color: Colors.white54,
-                  ),
-                );
-              },
+          // Gapless: _thumb holds previous video frame until next one arrives.
+          : _thumb != null
+          ? Image.memory(_thumb!, fit: BoxFit.contain)
+          : const Center(
+              child: Icon(
+                Icons.movie_outlined,
+                size: 56,
+                color: Colors.white54,
+              ),
             ),
     );
   }
@@ -2028,6 +2080,168 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
   return result;
 }
 
+// Show a dialog with the full key/value and individual copy buttons.
+Future<void> _showMetaEntryDialog(
+  BuildContext context, {
+  required String rawKey,
+  required String value,
+}) async {
+  final displayKey = _friendlyMetaKey(rawKey);
+
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      // Track which field was just copied so we can flash the icon.
+      String? copiedField;
+
+      // Bordered, scrollable, monospace box — looks like an EditText.
+      Widget field(
+        String label,
+        String text,
+        StateSetter setState, {
+        bool scrollable = false,
+      }) {
+        const mono = TextStyle(
+          fontSize: 12.5,
+          fontFamily: 'Courier',
+          fontFamilyFallback: <String>['Menlo', 'monospace'],
+        );
+        final inner = SelectableText(text, style: mono);
+        final isCopied = copiedField == label;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: _c2paMutedText,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.6)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: text));
+                    setState(() => copiedField = label);
+                    await Future<void>.delayed(const Duration(milliseconds: 3000));
+                    setState(() {
+                      if (copiedField == label) copiedField = null;
+                    });
+                  },
+                  // Fixed width prevents layout jump when switching states.
+                  child: SizedBox(
+                    width: 72,
+                    height: 20,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: isCopied
+                          ? const Row(
+                              key: ValueKey<String>('check'),
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: <Widget>[
+                                Icon(Icons.check, size: 14, color: Colors.green),
+                                SizedBox(width: 4),
+                                Text('Copied',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                            )
+                          : const Align(
+                              key: ValueKey<String>('copy'),
+                              alignment: Alignment.centerRight,
+                              child: Icon(Icons.copy_outlined,
+                                  size: 16, color: _c2paAccentDark),
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                border: Border.all(color: _c2paCardBorder),
+                borderRadius: BorderRadius.circular(8),
+                // Transparent — inherits dialog surface colour.
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: scrollable
+                  ? ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      child: SingleChildScrollView(child: inner),
+                    )
+                  : inner,
+            ),
+          ],
+        );
+      }
+
+      return StatefulBuilder(
+        builder: (ctx2, setState) => AlertDialog(
+          title: const Text('Metadata',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          // Shrinks to content width; max ~520 on wide screens.
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+          content: IntrinsicWidth(
+            stepWidth: 64,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 240, maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  field('KEY', displayKey, setState),
+                  const SizedBox(height: 16),
+                  field('VALUE', value, setState, scrollable: true),
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx2).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+// Map raw metadata tag keys to human-friendly display names.
+String _friendlyMetaKey(String key) {
+  const Map<String, String> knownKeys = <String, String>{
+    '%A9too': '© Tool',
+    '%A9nam': '© Title',
+    '%A9art': '© Artist',
+    '%A9alb': '© Album',
+    '%A9day': '© Year',
+    '%A9cmt': '© Comment',
+    '%A9gen': '© Genre',
+    '%A9lyr': '© Lyrics',
+    '%A9cpy': '© Copyright',
+    '%A9enc': '© Encoded By',
+    '%A9wrk': '© Work',
+    '%A9grp': '© Grouping',
+  };
+  if (knownKeys.containsKey(key)) return knownKeys[key]!;
+  // Handle %00%00%00%NN — QuickTime numeric-indexed metadata atoms
+  final qtNumeric = RegExp(r'^(?:%00){3}%([0-9A-Fa-f]{2})$');
+  final m = qtNumeric.firstMatch(key);
+  if (m != null) {
+    final idx = int.parse(m.group(1)!, radix: 16);
+    return 'QT Key #$idx';
+  }
+  return key;
+}
+
 class _ExifGroupsCard extends StatefulWidget {
   const _ExifGroupsCard({required this.groups, this.shrinkWrap = false});
 
@@ -2189,38 +2403,30 @@ class _ExifGroupTile extends StatelessWidget {
               children: <Widget>[
                 for (final entry in entries.entries) ...<Widget>[
                   const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      GestureDetector(
-                        onDoubleTap: _isMobile ? null : () async {
-                          await Clipboard.setData(ClipboardData(text: entry.key));
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('Copied: ${entry.key}',
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                              duration: const Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                              width: 320,
-                            ));
-                          }
-                        },
-                        onLongPress: _isMobile ? () async {
-                          await Clipboard.setData(ClipboardData(text: entry.key));
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('Copied: ${entry.key}',
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                              duration: const Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                              width: 320,
-                            ));
-                          }
-                        } : null,
-                        child: SizedBox(
+                  // Double-tap (desktop) or long-press (mobile) opens detail dialog.
+                  GestureDetector(
+                    onDoubleTap: _isMobile ? null : () =>
+                        unawaited(_showMetaEntryDialog(
+                          context,
+                          rawKey: entry.key,
+                          value: entry.value,
+                        )),
+                    onLongPress: _isMobile ? () {
+                        HapticFeedback.mediumImpact();
+                        unawaited(_showMetaEntryDialog(
+                          context,
+                          rawKey: entry.key,
+                          value: entry.value,
+                        ));
+                      } : null,
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        SizedBox(
                           width: 130,
                           child: Text(
-                            entry.key,
+                            _friendlyMetaKey(entry.key),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -2229,33 +2435,7 @@ class _ExifGroupTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: GestureDetector(
-                          onDoubleTap: _isMobile ? null : () async {
-                            await Clipboard.setData(ClipboardData(text: entry.value));
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text('Copied: ${entry.value}',
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                                width: 320,
-                              ));
-                            }
-                          },
-                          onLongPress: _isMobile ? () async {
-                            await Clipboard.setData(ClipboardData(text: entry.value));
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text('Copied: ${entry.value}',
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                                width: 320,
-                              ));
-                            }
-                          } : null,
+                        Expanded(
                           child: Text(
                             entry.value,
                             maxLines: 1,
@@ -2263,8 +2443,8 @@ class _ExifGroupTile extends StatelessWidget {
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ],
@@ -2297,37 +2477,31 @@ class _C2paInfoCard extends StatelessWidget {
     return <Widget>[
       for (int i = 0; i < visibleRows.length; i++) ...<Widget>[
         if (i > 0) const SizedBox(height: 8),
-        // Compact and non-compact both use a Row so key/value can be
-        // long-pressed independently to copy each one.
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            GestureDetector(
-              onDoubleTap: _isMobile ? null : () async {
-                await Clipboard.setData(ClipboardData(text: visibleRows[i].$1));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Copied: ${visibleRows[i].$1}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    duration: const Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                    width: 320,
+        // Double-tap (desktop) / long-press (mobile) opens the metadata
+        // dialog — same behaviour as EXIF/metadata rows.
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: _isMobile
+              ? null
+              : () => unawaited(_showMetaEntryDialog(
+                    context,
+                    rawKey: visibleRows[i].$1,
+                    value: visibleRows[i].$2!,
+                  )),
+          onLongPress: _isMobile
+              ? () {
+                  HapticFeedback.mediumImpact();
+                  unawaited(_showMetaEntryDialog(
+                    context,
+                    rawKey: visibleRows[i].$1,
+                    value: visibleRows[i].$2!,
                   ));
                 }
-              },
-              onLongPress: _isMobile ? () async {
-                await Clipboard.setData(ClipboardData(text: visibleRows[i].$1));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Copied: ${visibleRows[i].$1}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    duration: const Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                    width: 320,
-                  ));
-                }
-              } : null,
-              child: SizedBox(
+              : null,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
                 width: 94,
                 child: Text(
                   visibleRows[i].$1,
@@ -2339,33 +2513,7 @@ class _C2paInfoCard extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onDoubleTap: _isMobile ? null : () async {
-                  await Clipboard.setData(ClipboardData(text: visibleRows[i].$2!));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Copied: ${visibleRows[i].$2!}',
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      duration: const Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                      width: 320,
-                    ));
-                  }
-                },
-                onLongPress: _isMobile ? () async {
-                  await Clipboard.setData(ClipboardData(text: visibleRows[i].$2!));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Copied: ${visibleRows[i].$2!}',
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      duration: const Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                      width: 320,
-                    ));
-                  }
-                } : null,
+              Expanded(
                 child: Text(
                   visibleRows[i].$2!,
                   maxLines: 1,
@@ -2373,8 +2521,8 @@ class _C2paInfoCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     ];
