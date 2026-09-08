@@ -6,6 +6,7 @@ import 'package:c2pa_viewer/src/services/c2pa_write_options_store.dart';
 import 'package:c2pa_viewer/src/services/github_update_service.dart';
 import 'package:c2pa_viewer/src/screens/c2pa_browser_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -397,6 +398,124 @@ void main() {
       expect(find.textContaining(text, findRichText: true), findsAtLeastNWidgets(1));
     }
     expect(find.textContaining('App or device', findRichText: true), findsNothing);
+  });
+
+  testWidgets('opens search with the raw JSON header in view', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final sourcePath = File('assets/app_icon_1024.png').absolute.path;
+    final rawJson = List<String>.generate(
+      120,
+      (index) =>
+          '  "entry$index": "${index == 40 || index == 100 ? 'nu-match' : index}"',
+    ).join('\n');
+    final report = C2paReport(
+      activeManifestLabel: 'active',
+      manifests: const <C2paManifest>[
+        C2paManifest(label: 'active', title: 'source.png'),
+      ],
+      validationEntries: List<C2paValidationEntry>.generate(
+        10,
+        (index) => C2paValidationEntry(
+          code: 'check.$index',
+          outcome: C2paValidationOutcome.passed,
+          explanation: 'check passed',
+        ),
+      ),
+      rawJson: '{\n$rawJson\n}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: C2paBrowserPage(
+          pendingPaths: <String>[sourcePath],
+          checkForUpdatesOnLaunch: false,
+          mediaLoader: (path) async => VideoClipInfo(
+            path: path,
+            name: 'source.png',
+            duration: Duration.zero,
+            width: 100,
+            height: 100,
+            hasAudio: false,
+            mediaKind: MediaKind.photo,
+            aiMetadata: AiMediaMetadata(
+              c2paStatus: C2paStatus.conformant,
+              c2paReport: report,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Tab).at(2));
+    await tester.pumpAndSettle();
+
+    final scrollable = find.byType(Scrollable).at(1);
+    tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final rawHeader = find.text('Raw manifest JSON');
+    expect(rawHeader, findsOneWidget);
+    final headerTop = tester.getTopLeft(rawHeader).dy;
+    expect(headerTop, greaterThan(420));
+    expect(headerTop, lessThan(550));
+    expect(
+      find.byKey(const ValueKey<String>('c2pa-search-field')),
+      findsOneWidget,
+    );
+
+    final headerOffset = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('c2pa-search-field')),
+      'nu',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final firstMatchOffset =
+        tester.state<ScrollableState>(scrollable).position.pixels;
+    expect(firstMatchOffset, greaterThan(headerOffset));
+
+    await tester.tap(find.byTooltip('Next match'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final secondMatchOffset =
+        tester.state<ScrollableState>(scrollable).position.pixels;
+    expect(secondMatchOffset, greaterThan(firstMatchOffset));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      lessThan(secondMatchOffset),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('c2pa-search-field')),
+      findsNothing,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('c2pa-search-field')),
+      findsOneWidget,
+    );
   });
   _updateTests();
 }

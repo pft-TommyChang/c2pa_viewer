@@ -51,6 +51,9 @@ class _ViewerHome extends StatefulWidget {
 }
 
 class _ViewerHomeState extends State<_ViewerHome> {
+  static const MethodChannel _startupChannel = MethodChannel(
+    'c2pa_viewer/startup',
+  );
   static const MethodChannel _mediaOpenChannel = MethodChannel(
     'c2pa_viewer/media_open',
   );
@@ -63,6 +66,9 @@ class _ViewerHomeState extends State<_ViewerHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_dismissNativeStartupView());
+    });
     _pendingPaths = (widget.initialPath?.isNotEmpty ?? false)
         ? [widget.initialPath!]
         : [];
@@ -80,6 +86,14 @@ class _ViewerHomeState extends State<_ViewerHome> {
     _mediaOpenChannel.setMethodCallHandler(null);
     AiMetadataService.cleanupExtractedResources();
     super.dispose();
+  }
+
+  Future<void> _dismissNativeStartupView() async {
+    try {
+      await _startupChannel.invokeMethod<void>('dismiss');
+    } on MissingPluginException {
+      // Only the macOS runner installs this native startup view.
+    }
   }
 
   Future<Object?> _handleMediaOpenMethodCall(MethodCall call) async {

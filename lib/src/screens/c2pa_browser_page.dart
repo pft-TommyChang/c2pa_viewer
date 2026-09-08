@@ -3434,6 +3434,8 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
   _C2paJsonViewMode _viewMode = _C2paJsonViewMode.raw;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _contentScrollController = ScrollController();
+  final FocusNode _technicalFocusNode = FocusNode();
+  final GlobalKey _jsonHeaderKey = GlobalKey();
   final GlobalKey _jsonSectionKey = GlobalKey();
   final GlobalKey _contentViewportKey = GlobalKey();
   final Set<String> _expandedPaths = <String>{r'$'};
@@ -3461,9 +3463,18 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
 
   void _openSearch() {
     if (_isMobile) return;
+    if (_isSearchOpen) {
+      FocusScope.of(context).requestFocus(_searchFocusNode);
+      return;
+    }
     setState(() => _isSearchOpen = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) FocusScope.of(context).requestFocus(_searchFocusNode);
+      if (!mounted) return;
+      FocusScope.of(context).requestFocus(_searchFocusNode);
+      // The search panel can be opened by a hotkey while the JSON section is
+      // outside the viewport. Bring its header into view before searching so
+      // match scrolling has a laid-out target and a usable scroll extent.
+      _scheduleJsonHeaderScroll();
     });
   }
 
@@ -3486,6 +3497,7 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
       _search = '';
       _activeMatch = 0;
     });
+    _technicalFocusNode.requestFocus();
   }
 
   void closeSearch() => _closeSearch();
@@ -3495,11 +3507,12 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
     if (report == null) return;
     final matches = _matchStarts(report.rawJson);
     if (matches.isEmpty) return;
-    setState(() => _activeMatch = (_activeMatch + delta) % matches.length);
-    final position = matches[_activeMatch];
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollMatchIntoView(report.rawJson, position);
+    setState(() {
+      _activeMatch = (_activeMatch + delta) % matches.length;
+      if (_activeMatch < 0) _activeMatch += matches.length;
     });
+    final position = matches[_activeMatch];
+    _scheduleScrollMatchIntoView(report.rawJson, position);
   }
 
   void _scrollMatchIntoView(String source, int position) {
@@ -3514,14 +3527,37 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
     final matchY = jsonTop - viewportTop + 14 + line * lineHeight;
     final centeredOffset =
         _contentScrollController.offset + matchY - viewportBox.size.height / 2;
-    _contentScrollController.animateTo(
+    _contentScrollController.jumpTo(
       centeredOffset.clamp(
         0.0,
         _contentScrollController.position.maxScrollExtent,
       ),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
     );
+  }
+
+  void _scheduleJsonHeaderScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final headerContext = _jsonHeaderKey.currentContext;
+      final headerBox = headerContext?.findRenderObject();
+      final viewportBox = _contentViewportKey.currentContext
+          ?.findRenderObject();
+      if (headerBox is! RenderBox || viewportBox is! RenderBox) return;
+      if (!_contentScrollController.hasClients) return;
+
+      final headerTop = headerBox.localToGlobal(Offset.zero).dy;
+      final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+      final targetOffset =
+          _contentScrollController.offset +
+          (headerTop - viewportTop) -
+          (viewportBox.size.height - headerBox.size.height) / 2;
+      _contentScrollController.jumpTo(
+        targetOffset.clamp(
+          0.0,
+          _contentScrollController.position.maxScrollExtent,
+        ),
+      );
+    });
   }
 
   void _scrollCurrentMatchIntoView() {
@@ -3529,8 +3565,13 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
     if (report == null) return;
     final matches = _matchStarts(report.rawJson);
     if (matches.isEmpty) return;
+    _scheduleScrollMatchIntoView(report.rawJson, matches[_activeMatch]);
+  }
+
+  void _scheduleScrollMatchIntoView(String source, int position) {
+    // Wait for the search rebuild and layout before measuring the match.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollMatchIntoView(report.rawJson, matches[_activeMatch]);
+      if (mounted) _scrollMatchIntoView(source, position);
     });
   }
 
@@ -3541,6 +3582,7 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _contentScrollController.dispose();
+    _technicalFocusNode.dispose();
     super.dispose();
   }
 
@@ -3569,10 +3611,11 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
             _moveMatch(-1),
       },
       child: Focus(
+        focusNode: _technicalFocusNode,
         autofocus: true,
         child: Stack(
           children: <Widget>[
-            ListView(
+            SingleChildScrollView(
               key: _contentViewportKey,
               controller: _contentScrollController,
               padding: EdgeInsets.fromLTRB(
@@ -3581,141 +3624,148 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
                 18,
                 18 + MediaQuery.paddingOf(context).bottom,
               ),
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        'Validation checks',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Text(
-                      '${report.passedCheckCount} passed · ${report.failedCheckCount} failed',
-                      style: const TextStyle(color: _c2paMutedText),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (report.validationEntries.isEmpty)
-                  const _C2paEmptyCard(
-                    message: 'No individual validation checks were reported.',
-                  )
-                else
-                  ...report.validationEntries.map(
-                    (entry) => _C2paValidationTile(entry: entry),
-                  ),
-                const SizedBox(height: 22),
-                Row(
-                  children: <Widget>[
-                    if (!_isMobile)
-                      Text(
-                        'Raw manifest JSON',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      )
-                    else
+              child: Column(
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
                       Expanded(
                         child: Text(
-                          'Raw manifest JSON',
+                          'Validation checks',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                       ),
-                    if (!_isMobile) ...<Widget>[
-                      const SizedBox(width: 20),
-                      _C2paJsonModeSwitch(
-                        mode: _viewMode,
-                        onChanged: (mode) => setState(() => _viewMode = mode),
+                      Text(
+                        '${report.passedCheckCount} passed · ${report.failedCheckCount} failed',
+                        style: const TextStyle(color: _c2paMutedText),
                       ),
-                      const Spacer(),
                     ],
-                    if (!_isMobile)
-                      TextButton.icon(
-                        key: const ValueKey<String>('open-c2pa-search'),
-                        onPressed: _isSearchOpen ? _closeSearch : _openSearch,
-                        icon: Icon(
-                          _isSearchOpen ? Icons.close : Icons.search,
-                          size: 17,
-                        ),
-                        label: const Text('Search'),
-                      ),
-                    TextButton.icon(
-                      key: const ValueKey<String>('copy-c2pa-json'),
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: report.rawJson));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('C2PA JSON copied')),
-                        );
-                      },
-                      icon: const Icon(Icons.copy_outlined, size: 17),
-                      label: const Text('Copy'),
+                  ),
+                  const SizedBox(height: 10),
+                  if (report.validationEntries.isEmpty)
+                    const _C2paEmptyCard(
+                      message: 'No individual validation checks were reported.',
+                    )
+                  else
+                    ...report.validationEntries.map(
+                      (entry) => _C2paValidationTile(entry: entry),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  key: _jsonSectionKey,
-                  width: double.infinity,
-                  child: !_isMobile && _viewMode == _C2paJsonViewMode.tree
-                      ? _C2paJsonTree(
-                          source: report.rawJson,
-                          search: _search,
-                          activeMatch: _activeMatch,
-                          expandedPaths: _expandedPaths,
-                          expandAllByDefault: !_hasUserChangedJsonExpansion,
-                          searchExpandedPaths: _searchExpandedPaths,
-                          searchCollapsedPaths: _searchCollapsedPaths,
-                          onToggle: (path, isExpanded) => setState(() {
-                            _hasUserChangedJsonExpansion = true;
-                            if (_search.isNotEmpty) {
-                              if (isExpanded) {
-                                _searchExpandedPaths.remove(path);
-                                _searchCollapsedPaths.add(path);
-                              } else {
-                                _searchCollapsedPaths.remove(path);
-                                _searchExpandedPaths.add(path);
-                              }
-                            } else if (!_expandedPaths.add(path)) {
-                              _expandedPaths.remove(path);
-                            }
-                          }),
-                          onExpandAll: (paths) => setState(() {
-                            _hasUserChangedJsonExpansion = true;
-                            if (_search.isNotEmpty) {
-                              _searchCollapsedPaths.clear();
-                              _searchExpandedPaths.addAll(paths);
-                            }
-                            _expandedPaths.addAll(paths);
-                          }),
-                          onCollapseAll: (paths) => setState(() {
-                            _hasUserChangedJsonExpansion = true;
-                            if (_search.isNotEmpty) {
-                              _searchExpandedPaths.clear();
-                              _searchCollapsedPaths.addAll(paths);
-                            }
-                            _expandedPaths.removeWhere((path) => path != r'$');
-                          }),
+                  const SizedBox(height: 22),
+                  Row(
+                    key: _jsonHeaderKey,
+                    children: <Widget>[
+                      if (!_isMobile)
+                        Text(
+                          'Raw manifest JSON',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         )
-                      : Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            border: Border.all(color: _c2paCardBorder),
-                            borderRadius: BorderRadius.circular(14),
+                      else
+                        Expanded(
+                          child: Text(
+                            'Raw manifest JSON',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          child: SelectableText.rich(
-                            _highlightJson(
-                              report.rawJson,
-                              query: _search,
-                              activeMatch: _activeMatch,
+                        ),
+                      if (!_isMobile) ...<Widget>[
+                        const SizedBox(width: 20),
+                        _C2paJsonModeSwitch(
+                          mode: _viewMode,
+                          onChanged: (mode) => setState(() => _viewMode = mode),
+                        ),
+                        const Spacer(),
+                      ],
+                      if (!_isMobile)
+                        TextButton.icon(
+                          key: const ValueKey<String>('open-c2pa-search'),
+                          onPressed: _isSearchOpen ? _closeSearch : _openSearch,
+                          icon: Icon(
+                            _isSearchOpen ? Icons.close : Icons.search,
+                            size: 17,
+                          ),
+                          label: const Text('Search'),
+                        ),
+                      TextButton.icon(
+                        key: const ValueKey<String>('copy-c2pa-json'),
+                        onPressed: () {
+                          Clipboard.setData(
+                            ClipboardData(text: report.rawJson),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('C2PA JSON copied')),
+                          );
+                        },
+                        icon: const Icon(Icons.copy_outlined, size: 17),
+                        label: const Text('Copy'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    key: _jsonSectionKey,
+                    width: double.infinity,
+                    child: !_isMobile && _viewMode == _C2paJsonViewMode.tree
+                        ? _C2paJsonTree(
+                            source: report.rawJson,
+                            search: _search,
+                            activeMatch: _activeMatch,
+                            expandedPaths: _expandedPaths,
+                            expandAllByDefault: !_hasUserChangedJsonExpansion,
+                            searchExpandedPaths: _searchExpandedPaths,
+                            searchCollapsedPaths: _searchCollapsedPaths,
+                            onToggle: (path, isExpanded) => setState(() {
+                              _hasUserChangedJsonExpansion = true;
+                              if (_search.isNotEmpty) {
+                                if (isExpanded) {
+                                  _searchExpandedPaths.remove(path);
+                                  _searchCollapsedPaths.add(path);
+                                } else {
+                                  _searchCollapsedPaths.remove(path);
+                                  _searchExpandedPaths.add(path);
+                                }
+                              } else if (!_expandedPaths.add(path)) {
+                                _expandedPaths.remove(path);
+                              }
+                            }),
+                            onExpandAll: (paths) => setState(() {
+                              _hasUserChangedJsonExpansion = true;
+                              if (_search.isNotEmpty) {
+                                _searchCollapsedPaths.clear();
+                                _searchExpandedPaths.addAll(paths);
+                              }
+                              _expandedPaths.addAll(paths);
+                            }),
+                            onCollapseAll: (paths) => setState(() {
+                              _hasUserChangedJsonExpansion = true;
+                              if (_search.isNotEmpty) {
+                                _searchExpandedPaths.clear();
+                                _searchCollapsedPaths.addAll(paths);
+                              }
+                              _expandedPaths.removeWhere(
+                                (path) => path != r'$',
+                              );
+                            }),
+                          )
+                        : Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              border: Border.all(color: _c2paCardBorder),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: SelectableText.rich(
+                              _highlightJson(
+                                report.rawJson,
+                                query: _search,
+                                activeMatch: _activeMatch,
+                              ),
                             ),
                           ),
-                        ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
             if (!_isMobile && _isSearchOpen)
               Positioned(
@@ -3767,77 +3817,86 @@ class _C2paSearchPanel extends StatelessWidget {
   final VoidCallback onClose;
 
   @override
-  Widget build(BuildContext context) => Material(
-    elevation: 5,
-    borderRadius: BorderRadius.circular(10),
-    color: Colors.white,
-    child: Container(
-      width: 360,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: _c2paCardBorder),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                const Icon(Icons.search, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    key: const ValueKey<String>('c2pa-search-field'),
-                    controller: controller,
-                    focusNode: focusNode,
-                    autofocus: true,
-                    onChanged: onChanged,
-                    maxLines: 1,
-                    minLines: 1,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: const InputDecoration(
-                      isCollapsed: true,
-                      hintText: 'Search',
-                      hintStyle: TextStyle(color: Color(0x80697180)),
-                      contentPadding: EdgeInsets.zero,
-                      border: InputBorder.none,
+  Widget build(BuildContext context) => CallbackShortcuts(
+    bindings: <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.enter): onNext,
+      const SingleActivator(LogicalKeyboardKey.enter, shift: true): onPrevious,
+      const SingleActivator(LogicalKeyboardKey.f3): onNext,
+      const SingleActivator(LogicalKeyboardKey.f3, shift: true): onPrevious,
+    },
+    child: Material(
+      elevation: 5,
+      borderRadius: BorderRadius.circular(10),
+      color: Colors.white,
+      child: Container(
+        width: 360,
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: _c2paCardBorder),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  const Icon(Icons.search, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey<String>('c2pa-search-field'),
+                      controller: controller,
+                      focusNode: focusNode,
+                      autofocus: true,
+                      onChanged: onChanged,
+                      maxLines: 1,
+                      minLines: 1,
+                      style: const TextStyle(fontSize: 14),
+                      scrollPadding: EdgeInsets.zero,
+                      decoration: const InputDecoration(
+                        isCollapsed: true,
+                        hintText: 'Search',
+                        hintStyle: TextStyle(color: Color(0x80697180)),
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Text(matchCount == 0 ? '0/0' : '${activeMatch + 1}/$matchCount'),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Previous match',
-            onPressed: matchCount == 0 ? null : onPrevious,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-            icon: const Icon(Icons.keyboard_arrow_up, size: 19),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: 'Next match',
-            onPressed: matchCount == 0 ? null : onNext,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-            icon: const Icon(Icons.keyboard_arrow_down, size: 19),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: 'Close search',
-            onPressed: onClose,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-            icon: const Icon(Icons.close, size: 19),
-          ),
-        ],
+            Text(matchCount == 0 ? '0/0' : '${activeMatch + 1}/$matchCount'),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: 'Previous match',
+              onPressed: matchCount == 0 ? null : onPrevious,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              icon: const Icon(Icons.keyboard_arrow_up, size: 19),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Next match',
+              onPressed: matchCount == 0 ? null : onNext,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              icon: const Icon(Icons.keyboard_arrow_down, size: 19),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Close search',
+              onPressed: onClose,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+              icon: const Icon(Icons.close, size: 19),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -4241,8 +4300,9 @@ String _valueText(dynamic value) {
   return '$value';
 }
 
-final String _c2paJsonFontFamily =
-    Platform.isIOS || Platform.isMacOS ? 'Menlo' : 'monospace';
+final String _c2paJsonFontFamily = Platform.isIOS || Platform.isMacOS
+    ? 'Menlo'
+    : 'monospace';
 final TextStyle _c2paJsonKeyStyle = TextStyle(
   fontFamily: _c2paJsonFontFamily,
   fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
