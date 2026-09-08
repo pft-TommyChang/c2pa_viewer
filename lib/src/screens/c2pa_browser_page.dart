@@ -1697,7 +1697,12 @@ class _C2paOverview extends StatelessWidget {
       title: 'Manifest',
       icon: Icons.description_outlined,
       rows: <(String, String?)>[
-        ('Title', manifest?.title ?? p.basename(clip.path)),
+          (
+            'Title',
+            manifest?.title?.trim().isNotEmpty == true
+                ? manifest!.title
+                : 'Untitled asset',
+          ),
         (
           'Format',
           manifest?.format ?? shortMediaTypeLabel(clip.path, clip.mediaKind),
@@ -2946,7 +2951,7 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
       root,
       manifestMap,
       report.activeManifestLabel,
-      p.basename(widget.clip.path),
+      'Untitled asset',
     );
     final levelCount = nodes.fold<int>(
       0,
