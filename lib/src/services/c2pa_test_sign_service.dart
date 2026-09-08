@@ -211,7 +211,7 @@ class C2paTestSignService {
     await manifestFile.writeAsString(
       const JsonEncoder.withIndent('  ').convert(
         _buildManifest(
-          title: p.basename(clip.path),
+          title: 'PERFECT C2PA',
           signingCertificatePath: signingCertificatePath,
           signingPrivateKeyPath: signingPrivateKeyPath,
         ),
@@ -291,9 +291,9 @@ class C2paTestSignService {
     required String signingPrivateKeyPath,
   }) {
     return <String, dynamic>{
-      'claim_generator': 'Perfect C2PA Test Sign',
+      'claim_generator': 'Perfect C2PA',
       'claim_generator_info': <Map<String, String>>[
-        <String, String>{'name': 'Perfect C2PA Test Sign'},
+        <String, String>{'name': 'Perfect C2PA'},
       ],
       'title': title,
       'assertions': <Map<String, dynamic>>[
@@ -303,7 +303,7 @@ class C2paTestSignService {
             'actions': <Map<String, String>>[
               <String, String>{
                 'action': 'c2pa.edited',
-                'softwareAgent': 'Perfect C2PA Test Sign',
+                'softwareAgent': 'Perfect C2PA',
               },
             ],
           },

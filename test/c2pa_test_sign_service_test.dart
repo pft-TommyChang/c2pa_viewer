@@ -80,7 +80,8 @@ void main() {
       expect(await output.readAsString(), 'signed media');
       expect(calls, hasLength(2));
       expect(calls.last, contains('--parent'));
-      expect(manifest?['claim_generator'], 'Perfect C2PA Test Sign');
+      expect(manifest?['claim_generator'], 'Perfect C2PA');
+      expect(manifest?['title'], 'PERFECT C2PA');
       expect(
         ((manifest?['assertions'] as List).first as Map)['label'],
         'c2pa.actions.v2',
