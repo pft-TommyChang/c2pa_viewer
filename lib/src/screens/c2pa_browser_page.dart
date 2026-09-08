@@ -133,7 +133,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
     super.initState();
     _tabController = TabController(length: 3, vsync: this)
       // Rebuild on tab change so TabBarView physics update.
-      ..addListener(() { if (mounted) setState(() {}); });
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
     _clip = _emptyC2paClip();
     _controller = null;
     _writeOptionsStore = widget.writeOptionsStore;
@@ -302,17 +304,24 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
         if (Platform.isIOS)
           const XTypeGroup(
             label: 'Photos and videos',
-            uniformTypeIdentifiers: <String>[
-              'public.image',
-              'public.movie',
-            ],
+            uniformTypeIdentifiers: <String>['public.image', 'public.movie'],
           )
         else
           const XTypeGroup(
             label: 'Photos and videos',
             extensions: <String>[
-              'mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm',
-              'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif',
+              'mp4',
+              'mov',
+              'm4v',
+              'avi',
+              'mkv',
+              'webm',
+              'jpg',
+              'jpeg',
+              'png',
+              'webp',
+              'heic',
+              'heif',
             ],
           ),
       ],
@@ -402,7 +411,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
           await MobileC2paService.saveToPhotoLibrary(outputPath);
           _showErrorToast('Saved media with C2PA to Photos.');
         } catch (saveError) {
-          _showErrorToast('Could not save to Photos directly, using share sheet instead: $saveError');
+          _showErrorToast(
+            'Could not save to Photos directly, using share sheet instead: $saveError',
+          );
           if (!mounted) return;
           final box = context.findRenderObject() as RenderBox?;
           await SharePlus.instance.share(
@@ -539,111 +550,111 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
             onDragExited: (_) => setState(() => _isDragging = false),
             onDragDone: (details) => unawaited(_handleDrop(details.files)),
             child: Stack(
-                children: <Widget>[
-                  Column(
-                    children: <Widget>[
-                      _C2paPageHeader(
-                        clip: _hasMedia ? _clip : null,
-                        onOpen: () => unawaited(_pickMedia()),
-                        onOpenFromFiles: Platform.isIOS || Platform.isAndroid
-                            ? () => unawaited(_pickMediaFromFiles())
-                            : null,
-                        onTestSign: () => unawaited(_testSignCurrentMedia()),
-                        canTestSign:
-                            _hasMedia &&
-                            !_isParsing &&
-                            !_isTestSigning &&
-                            (!(Platform.isIOS || Platform.isAndroid) ||
-                                const <String>{
-                                  '.jpg',
-                                  '.jpeg',
-                                  '.png',
-                                  '.webp',
-                                  '.tif',
-                                  '.tiff',
-                                  '.heic',
-                                  '.mp4',
-                                  '.mov',
-                                }.contains(
-                                  p.extension(_clip.path).toLowerCase(),
-                                )),
-                        isTestSigning: _isTestSigning,
-                        onPrev: () => unawaited(_navigatePrev()),
-                        onNext: () => unawaited(_navigateNext()),
-                        canGoPrev: _canGoPrev,
-                        canGoNext: _canGoNext,
-                        versionLabel: _versionLabel,
-                        availableUpdate: _availableUpdate,
-                        onUpdateTap: () => unawaited(_openReleasePage()),
-                      ),
-                      // Tab bar: always shown when media loaded;
-                      // disabled (dimmed, non-interactive) when no C2PA report.
-                      if (_hasMedia)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                          child: Material(
-                                color: _c2paPanelBackground,
-                                borderRadius: BorderRadius.circular(14),
-                                clipBehavior: Clip.antiAlias,
-                                child: SizedBox(
-                                  height: 44,
-                                  child: TabBar(
-                                    controller: _tabController,
-                                    dividerColor: Colors.transparent,
-                                    indicator: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.all(
-                                        Radius.circular(10),
-                                      ),
-                                    ),
-                                    indicatorPadding: EdgeInsets.all(4),
-                                    indicatorSize: TabBarIndicatorSize.tab,
-                                    splashBorderRadius: BorderRadius.all(
-                                      Radius.circular(10),
-                                    ),
-                                    labelColor: Color(0xFF171A21),
-                                    unselectedLabelColor: _c2paMutedText,
-                                    overlayColor: WidgetStatePropertyAll<Color>(
-                                      Color(0x08697180),
-                                    ),
-                                    labelStyle: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                    tabs: <Widget>[
-                                      _C2paTab(
-                                        icon: Icons.badge_outlined,
-                                        label: 'Overview',
-                                      ),
-                                      _C2paTab(
-                                        icon: Icons.account_tree_outlined,
-                                        label: 'History',
-                                      ),
-                                      _C2paTab(
-                                        icon: Icons.fact_check_outlined,
-                                        label: 'Checks & JSON',
-                                        mobileLabel: 'Checks',
-                                      ),
-                                    ],
-                                  ),
+              children: <Widget>[
+                Column(
+                  children: <Widget>[
+                    _C2paPageHeader(
+                      clip: _hasMedia ? _clip : null,
+                      onOpen: () => unawaited(_pickMedia()),
+                      onOpenFromFiles: Platform.isIOS || Platform.isAndroid
+                          ? () => unawaited(_pickMediaFromFiles())
+                          : null,
+                      onTestSign: () => unawaited(_testSignCurrentMedia()),
+                      canTestSign:
+                          _hasMedia &&
+                          !_isParsing &&
+                          !_isTestSigning &&
+                          (!(Platform.isIOS || Platform.isAndroid) ||
+                              const <String>{
+                                '.jpg',
+                                '.jpeg',
+                                '.png',
+                                '.webp',
+                                '.tif',
+                                '.tiff',
+                                '.heic',
+                                '.mp4',
+                                '.mov',
+                              }.contains(
+                                p.extension(_clip.path).toLowerCase(),
+                              )),
+                      isTestSigning: _isTestSigning,
+                      onPrev: () => unawaited(_navigatePrev()),
+                      onNext: () => unawaited(_navigateNext()),
+                      canGoPrev: _canGoPrev,
+                      canGoNext: _canGoNext,
+                      versionLabel: _versionLabel,
+                      availableUpdate: _availableUpdate,
+                      onUpdateTap: () => unawaited(_openReleasePage()),
+                    ),
+                    // Tab bar: always shown when media loaded;
+                    // disabled (dimmed, non-interactive) when no C2PA report.
+                    if (_hasMedia)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                        child: Material(
+                          color: _c2paPanelBackground,
+                          borderRadius: BorderRadius.circular(14),
+                          clipBehavior: Clip.antiAlias,
+                          child: SizedBox(
+                            height: 44,
+                            child: TabBar(
+                              controller: _tabController,
+                              dividerColor: Colors.transparent,
+                              indicator: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(10),
                                 ),
                               ),
+                              indicatorPadding: EdgeInsets.all(4),
+                              indicatorSize: TabBarIndicatorSize.tab,
+                              splashBorderRadius: BorderRadius.all(
+                                Radius.circular(10),
+                              ),
+                              labelColor: Color(0xFF171A21),
+                              unselectedLabelColor: _c2paMutedText,
+                              overlayColor: WidgetStatePropertyAll<Color>(
+                                Color(0x08697180),
+                              ),
+                              labelStyle: TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                              tabs: <Widget>[
+                                _C2paTab(
+                                  icon: Icons.badge_outlined,
+                                  label: 'Overview',
+                                ),
+                                _C2paTab(
+                                  icon: Icons.account_tree_outlined,
+                                  label: 'History',
+                                ),
+                                _C2paTab(
+                                  icon: Icons.fact_check_outlined,
+                                  label: 'Checks & JSON',
+                                  mobileLabel: 'Checks',
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      if (_hasMedia) ...<Widget>[
-                        const SizedBox(height: _c2paSectionGap),
-                        _C2paFileLocationBar(path: _clip.path),
-                      ],
-                      Expanded(
-                        // ClipRect prevents elastic-overscroll content from
-                        // bleeding above the tab bar / page header on macOS.
-                        child: ClipRect(
-                          child: !_hasMedia
+                      ),
+                    if (_hasMedia) ...<Widget>[
+                      const SizedBox(height: _c2paSectionGap),
+                      _C2paFileLocationBar(path: _clip.path),
+                    ],
+                    Expanded(
+                      // ClipRect prevents elastic-overscroll content from
+                      // bleeding above the tab bar / page header on macOS.
+                      child: ClipRect(
+                        child: !_hasMedia
                             ? AnimatedOpacity(
                                 duration: const Duration(milliseconds: 140),
                                 opacity: _isDragging ? 0 : 1,
                                 child: _C2paAwaitingMediaView(
-                          onTap: _pickMedia,
-                          onTapFiles: _pickMediaFromFiles,
-                        ),
+                                  onTap: _pickMedia,
+                                  onTapFiles: _pickMediaFromFiles,
+                                ),
                               )
                             : TabBarView(
                                 controller: _tabController,
@@ -653,10 +664,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                 // tabs, not pan an already-fitted canvas.
                                 physics:
                                     (Platform.isIOS || Platform.isAndroid) &&
-                                            _tabController.index == 1 &&
-                                            !_historyZoomIsFit
-                                        ? const NeverScrollableScrollPhysics()
-                                        : null,
+                                        _tabController.index == 1 &&
+                                        !_historyZoomIsFit
+                                    ? const NeverScrollableScrollPhysics()
+                                    : null,
                                 children: <Widget>[
                                   _C2paOverview(
                                     clip: _clip,
@@ -674,47 +685,47 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                   _C2paTechnicalView(report: report),
                                 ],
                               ),
-                        ), // ClipRect
+                      ), // ClipRect
+                    ),
+                  ],
+                ),
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 140),
+                    opacity: _isDragging ? 1 : 0,
+                    child: Container(
+                      key: const ValueKey<String>('c2pa-drop-hover'),
+                      margin: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _c2paAccent.withValues(alpha: 0.12),
+                        border: Border.all(color: _c2paAccent, width: 3),
+                        borderRadius: BorderRadius.circular(18),
                       ),
-                    ],
+                      alignment: Alignment.center,
+                      child: const _C2paDropPrompt(prominent: true),
+                    ),
                   ),
-                  IgnorePointer(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 140),
-                      opacity: _isDragging ? 1 : 0,
-                      child: Container(
-                        key: const ValueKey<String>('c2pa-drop-hover'),
-                        margin: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: _c2paAccent.withValues(alpha: 0.12),
-                          border: Border.all(color: _c2paAccent, width: 3),
-                          borderRadius: BorderRadius.circular(18),
+                ),
+                // Full overlay with spinner only on the very first load
+                if (_isParsing && !_hasMedia)
+                  const Positioned.fill(
+                    child: ColoredBox(
+                      key: ValueKey<String>('c2pa-parsing-overlay'),
+                      color: Color(0xAAFFFCF7),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            CircularProgressIndicator(),
+                            SizedBox(height: 14),
+                            Text('Inspecting Content Credentials…'),
+                          ],
                         ),
-                        alignment: Alignment.center,
-                        child: const _C2paDropPrompt(prominent: true),
                       ),
                     ),
                   ),
-                  // Full overlay with spinner only on the very first load
-                  if (_isParsing && !_hasMedia)
-                    const Positioned.fill(
-                      child: ColoredBox(
-                        key: ValueKey<String>('c2pa-parsing-overlay'),
-                        color: Color(0xAAFFFCF7),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              CircularProgressIndicator(),
-                              SizedBox(height: 14),
-                              Text('Inspecting Content Credentials…'),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              ],
+            ),
           ),
         ),
       ),
@@ -813,14 +824,18 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
                     key: ValueKey<String>('c2pa-write-add'),
                     value: C2paWriteMode.add,
                     title: Text('Add C2PA'),
-                    subtitle: Text('Keep existing C2PA as parent, add a new claim'),
+                    subtitle: Text(
+                      'Keep existing C2PA as parent, add a new claim',
+                    ),
                     contentPadding: EdgeInsets.zero,
                   ),
                   const RadioListTile<C2paWriteMode>(
                     key: ValueKey<String>('c2pa-write-replace'),
                     value: C2paWriteMode.replace,
                     title: Text('Replace C2PA'),
-                    subtitle: Text('Discard existing C2PA, write a fresh claim'),
+                    subtitle: Text(
+                      'Discard existing C2PA, write a fresh claim',
+                    ),
                     contentPadding: EdgeInsets.zero,
                   ),
                   const RadioListTile<C2paWriteMode>(
@@ -843,7 +858,9 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
                 },
                 title: const Text('Create new file'),
                 subtitle: Text(
-                  _createNewFile ? 'Save to a new file and keep the original' : 'Overwrite the current file in place',
+                  _createNewFile
+                      ? 'Save to a new file and keep the original'
+                      : 'Overwrite the current file in place',
                 ),
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: EdgeInsets.zero,
@@ -916,8 +933,12 @@ class _C2paPageHeader extends StatelessWidget {
           children: <Widget>[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.asset('assets/app_icon_nobg.png',
-                width: compact ? 30 : 34, height: compact ? 30 : 34, fit: BoxFit.cover),
+              child: Image.asset(
+                'assets/app_icon_nobg.png',
+                width: compact ? 30 : 34,
+                height: compact ? 30 : 34,
+                fit: BoxFit.cover,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1008,49 +1029,49 @@ class _C2paPageHeader extends StatelessWidget {
             // On mobile: tap = Camera Roll, long press = show menu
             if (onOpenFromFiles != null)
               GestureDetector(
-                  onTap: onOpen,
-                  onLongPress: () async {
-                    HapticFeedback.mediumImpact();
-                    final iconBox = context.findRenderObject() as RenderBox?;
-                    if (iconBox == null) return;
-                    final pos = iconBox.localToGlobal(Offset.zero);
-                    final size = iconBox.size;
-                    final screenW = MediaQuery.of(context).size.width;
-                    final choice = await showMenu<String>(
-                      context: context,
-                      position: RelativeRect.fromLTRB(
-                        // Anchor right edge of menu to right edge of button
-                        screenW,
-                        pos.dy + size.height,
-                        screenW - (pos.dx + size.width),
-                        pos.dy + size.height + 4,
+                onTap: onOpen,
+                onLongPress: () async {
+                  HapticFeedback.mediumImpact();
+                  final iconBox = context.findRenderObject() as RenderBox?;
+                  if (iconBox == null) return;
+                  final pos = iconBox.localToGlobal(Offset.zero);
+                  final size = iconBox.size;
+                  final screenW = MediaQuery.of(context).size.width;
+                  final choice = await showMenu<String>(
+                    context: context,
+                    position: RelativeRect.fromLTRB(
+                      // Anchor right edge of menu to right edge of button
+                      screenW,
+                      pos.dy + size.height,
+                      screenW - (pos.dx + size.width),
+                      pos.dy + size.height + 4,
+                    ),
+                    items: const <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'camera_roll',
+                        child: Row(
+                          children: <Widget>[
+                            Icon(Icons.photo_library_outlined, size: 20),
+                            SizedBox(width: 10),
+                            Text('Camera Roll'),
+                          ],
+                        ),
                       ),
-                      items: const <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: 'camera_roll',
-                          child: Row(
-                            children: <Widget>[
-                              Icon(Icons.photo_library_outlined, size: 20),
-                              SizedBox(width: 10),
-                              Text('Camera Roll'),
-                            ],
-                          ),
+                      PopupMenuItem<String>(
+                        value: 'files',
+                        child: Row(
+                          children: <Widget>[
+                            Icon(Icons.folder_open_outlined, size: 20),
+                            SizedBox(width: 10),
+                            Text('Files'),
+                          ],
                         ),
-                        PopupMenuItem<String>(
-                          value: 'files',
-                          child: Row(
-                            children: <Widget>[
-                              Icon(Icons.folder_open_outlined, size: 20),
-                              SizedBox(width: 10),
-                              Text('Files'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                    if (choice == 'camera_roll') onOpen();
-                    if (choice == 'files') onOpenFromFiles!();
-                  },
+                      ),
+                    ],
+                  );
+                  if (choice == 'camera_roll') onOpen();
+                  if (choice == 'files') onOpenFromFiles!();
+                },
                 child: const Padding(
                   padding: EdgeInsets.all(8),
                   child: Icon(Icons.folder_open_outlined),
@@ -1300,15 +1321,11 @@ String _formatFileSize(int bytes) {
 }
 
 class _C2paDropPrompt extends StatelessWidget {
-  const _C2paDropPrompt({
-    this.prominent = false,
-    this.onTap,
-    this.onTapFiles,
-  });
+  const _C2paDropPrompt({this.prominent = false, this.onTap, this.onTapFiles});
 
   final bool prominent;
-  final VoidCallback? onTap;       // Camera Roll
-  final VoidCallback? onTapFiles;  // Files app
+  final VoidCallback? onTap; // Camera Roll
+  final VoidCallback? onTapFiles; // Files app
 
   @override
   Widget build(BuildContext context) {
@@ -1357,9 +1374,9 @@ class _C2paDropPrompt extends StatelessWidget {
             child: Text(
               'Select a photo or video',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
           ),
           const SizedBox(height: 20),
@@ -1377,16 +1394,18 @@ class _C2paDropPrompt extends StatelessWidget {
       content = Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.file_download_outlined,
-              size: iconSize, color: _c2paAccentDark),
+          Icon(
+            Icons.file_download_outlined,
+            size: iconSize,
+            color: _c2paAccentDark,
+          ),
           const SizedBox(height: 10),
           Text(
             'Drop media to inspect Content Credentials',
             textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
         ],
       );
@@ -1432,16 +1451,12 @@ class _C2paTabEmptyState extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             message,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(color: _c2paMutedText),
-          ),
+          Text(subtitle, style: const TextStyle(color: _c2paMutedText)),
         ],
       ),
     );
@@ -1513,7 +1528,12 @@ class _C2paNoCredentialsView extends StatelessWidget {
       ),
     );
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        _c2paSectionGap,
+        18,
+        18 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: <Widget>[
         // Mobile: 4:3 full-width thumbnail then info card below (same pattern
         // as _C2paOverview). Desktop: side-by-side row at fixed height.
@@ -1550,9 +1570,9 @@ class _C2paNoCredentialsView extends StatelessWidget {
           const SizedBox(height: 18),
           Text(
             'Other Metadata',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
           _ExifGroupsCard(groups: clip.exifGroups, shrinkWrap: isMobile),
@@ -1696,7 +1716,12 @@ class _C2paOverview extends StatelessWidget {
       shrinkWrap: isMobile,
     );
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        _c2paSectionGap,
+        18,
+        18 + MediaQuery.paddingOf(context).bottom,
+      ),
       physics: !isMobile ? const ClampingScrollPhysics() : null,
       children: <Widget>[
         if (isMobile) ...<Widget>[
@@ -1872,7 +1897,6 @@ class _C2paPreviewCardState extends State<_C2paPreviewCard> {
   }
 }
 
-
 // ---------------------------------------------------------------------------
 // JUMBF group builder – mirrors metadataview.com JUMBF output from rawJson
 // ---------------------------------------------------------------------------
@@ -1888,14 +1912,16 @@ String _binaryFieldLabel(dynamic value) {
 
 // Joins a list of nullable values as "v1, v2, null, v3"
 String _joinExclusionField(List<dynamic> exclusions, String field) {
-  return exclusions.map((e) {
-    final m = e as Map<String, dynamic>?;
-    if (m == null) return 'null';
-    final v = m[field];
-    if (v == null) return 'null';
-    if (v is List) return v.join(', ');
-    return '$v';
-  }).join(', ');
+  return exclusions
+      .map((e) {
+        final m = e as Map<String, dynamic>?;
+        if (m == null) return 'null';
+        final v = m[field];
+        if (v == null) return 'null';
+        if (v is List) return v.join(', ');
+        return '$v';
+      })
+      .join(', ');
 }
 
 Map<String, String> _buildJumbfGroup(C2paReport report) {
@@ -1921,8 +1947,7 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
     result['JUMDLabel'] = 'c2pa';
 
     // Signature reference: self#jumbf=/c2pa/{label}/c2pa.signature
-    result['Signature'] =
-        'self#jumbf=/c2pa/$activeLabel/c2pa.signature';
+    result['Signature'] = 'self#jumbf=/c2pa/$activeLabel/c2pa.signature';
 
     // InstanceID
     add('InstanceID', manifest['instance_id']);
@@ -1943,7 +1968,8 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
         if (org != null) {
           void flattenOrg(Map<String, dynamic> m, String prefix) {
             for (final e in m.entries) {
-              final sub = '$prefix${e.key[0].toUpperCase()}${e.key.substring(1)}';
+              final sub =
+                  '$prefix${e.key[0].toUpperCase()}${e.key.substring(1)}';
               if (e.value is Map<String, dynamic>) {
                 flattenOrg(e.value as Map<String, dynamic>, sub);
               } else {
@@ -1951,6 +1977,7 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
               }
             }
           }
+
           flattenOrg(org, 'Org');
         }
       }
@@ -1970,6 +1997,7 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
         }
       }
     }
+
     addAssertionRefs('Created_Assertions', manifest['created_assertions']);
     addAssertionRefs('Gathered_Assertions', manifest['gathered_assertions']);
 
@@ -2015,8 +2043,13 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
       final excls = hashBmff['exclusions'] as List<dynamic>? ?? [];
       if (excls.isNotEmpty) {
         for (final field in const <String>[
-          'data', 'exact', 'flags', 'xpath',
-          'length', 'subset', 'version',
+          'data',
+          'exact',
+          'flags',
+          'xpath',
+          'length',
+          'subset',
+          'version',
         ]) {
           final joined = _joinExclusionField(excls, field);
           // Capitalise first letter to match exiftool naming
@@ -2070,7 +2103,11 @@ Map<String, String> _buildJumbfGroup(C2paReport report) {
           add('${prefix}ParametersModel_Name', params['model_name']);
           // any remaining scalar params not already handled
           const handledParams = <String>{
-            'name', 'time', 'dateTime', 'log_id', 'model_name',
+            'name',
+            'time',
+            'dateTime',
+            'log_id',
+            'model_name',
           };
           for (final pe in params.entries) {
             if (handledParams.contains(pe.key)) continue;
@@ -2126,18 +2163,23 @@ Future<void> _showMetaEntryDialog(
           children: <Widget>[
             Row(
               children: <Widget>[
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: _c2paMutedText,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.6)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: _c2paMutedText,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                  ),
+                ),
                 const Spacer(),
                 GestureDetector(
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: text));
                     setState(() => copiedField = label);
-                    await Future<void>.delayed(const Duration(milliseconds: 3000));
+                    await Future<void>.delayed(
+                      const Duration(milliseconds: 3000),
+                    );
                     setState(() {
                       if (copiedField == label) copiedField = null;
                     });
@@ -2154,20 +2196,30 @@ Future<void> _showMetaEntryDialog(
                               mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: <Widget>[
-                                Icon(Icons.check, size: 14, color: Colors.green),
+                                Icon(
+                                  Icons.check,
+                                  size: 14,
+                                  color: Colors.green,
+                                ),
                                 SizedBox(width: 4),
-                                Text('Copied',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.green,
-                                        fontWeight: FontWeight.w500)),
+                                Text(
+                                  'Copied',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               ],
                             )
                           : const Align(
                               key: ValueKey<String>('copy'),
                               alignment: Alignment.centerRight,
-                              child: Icon(Icons.copy_outlined,
-                                  size: 16, color: _c2paAccentDark),
+                              child: Icon(
+                                Icons.copy_outlined,
+                                size: 16,
+                                color: _c2paAccentDark,
+                              ),
                             ),
                     ),
                   ),
@@ -2196,10 +2248,15 @@ Future<void> _showMetaEntryDialog(
 
       return StatefulBuilder(
         builder: (ctx2, setState) => AlertDialog(
-          title: const Text('Metadata',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          title: const Text(
+            'Metadata',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
           // Shrinks to content width; max ~520 on wide screens.
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 40,
+            vertical: 24,
+          ),
           content: IntrinsicWidth(
             stepWidth: 64,
             child: ConstrainedBox(
@@ -2279,8 +2336,17 @@ class _ExifGroupsCardState extends State<_ExifGroupsCard> {
     final groups = widget.groups;
     // Preferred display order
     final ordered = const <String>[
-      'FILE', 'COMPOSITE', 'EXIF', 'GPS', 'IPTC', 'TIFF',
-      'JFIF', 'PNG', 'QuickTime', 'MakerApple', 'JUMBF',
+      'FILE',
+      'COMPOSITE',
+      'EXIF',
+      'GPS',
+      'IPTC',
+      'TIFF',
+      'JFIF',
+      'PNG',
+      'QuickTime',
+      'MakerApple',
+      'JUMBF',
     ];
     final keys = <String>[
       ...ordered.where(groups.containsKey),
@@ -2354,8 +2420,7 @@ class _ExifGroupsCardState extends State<_ExifGroupsCard> {
       '57': 'SlowQuarterFrame',
     };
     return <String, String>{
-      for (final e in raw.entries)
-        (known[e.key] ?? 'Tag_${e.key}'): e.value,
+      for (final e in raw.entries) (known[e.key] ?? 'Tag_${e.key}'): e.value,
     };
   }
 }
@@ -2417,20 +2482,27 @@ class _ExifGroupTile extends StatelessWidget {
                   const SizedBox(height: 6),
                   // Double-tap (desktop) or long-press (mobile) opens detail dialog.
                   GestureDetector(
-                    onDoubleTap: _isMobile ? null : () =>
-                        unawaited(_showMetaEntryDialog(
-                          context,
-                          rawKey: entry.key,
-                          value: entry.value,
-                        )),
-                    onLongPress: _isMobile ? () {
-                        HapticFeedback.mediumImpact();
-                        unawaited(_showMetaEntryDialog(
-                          context,
-                          rawKey: entry.key,
-                          value: entry.value,
-                        ));
-                      } : null,
+                    onDoubleTap: _isMobile
+                        ? null
+                        : () => unawaited(
+                            _showMetaEntryDialog(
+                              context,
+                              rawKey: entry.key,
+                              value: entry.value,
+                            ),
+                          ),
+                    onLongPress: _isMobile
+                        ? () {
+                            HapticFeedback.mediumImpact();
+                            unawaited(
+                              _showMetaEntryDialog(
+                                context,
+                                rawKey: entry.key,
+                                value: entry.value,
+                              ),
+                            );
+                          }
+                        : null,
                     behavior: HitTestBehavior.opaque,
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -2495,19 +2567,23 @@ class _C2paInfoCard extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onDoubleTap: _isMobile
               ? null
-              : () => unawaited(_showMetaEntryDialog(
+              : () => unawaited(
+                  _showMetaEntryDialog(
                     context,
                     rawKey: visibleRows[i].$1,
                     value: visibleRows[i].$2!,
-                  )),
+                  ),
+                ),
           onLongPress: _isMobile
               ? () {
                   HapticFeedback.mediumImpact();
-                  unawaited(_showMetaEntryDialog(
-                    context,
-                    rawKey: visibleRows[i].$1,
-                    value: visibleRows[i].$2!,
-                  ));
+                  unawaited(
+                    _showMetaEntryDialog(
+                      context,
+                      rawKey: visibleRows[i].$1,
+                      value: visibleRows[i].$2!,
+                    ),
+                  );
                 }
               : null,
           child: Row(
@@ -2519,10 +2595,7 @@ class _C2paInfoCard extends StatelessWidget {
                   visibleRows[i].$1,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _c2paMutedText,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: _c2paMutedText, fontSize: 12),
                 ),
               ),
               Expanded(
@@ -2923,51 +2996,54 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
                           // pointer-down events — pan sensitivity unchanged.
                           onDoubleTap: () => _setMode(_ZoomMode.fit),
                           child: Listener(
-                          onPointerDown: (_) => _setCanvasGrabbed(true),
-                          onPointerUp: (_) => _setCanvasGrabbed(false),
-                          onPointerCancel: (_) => _setCanvasGrabbed(false),
-                          child: MouseRegion(
-                            key: const ValueKey<String>(
-                              'c2pa-history-pan-region',
-                            ),
-                            cursor: _isCanvasGrabbed
-                                ? SystemMouseCursors.grabbing
-                                : SystemMouseCursors.grab,
-                            child: InteractiveViewer(
+                            onPointerDown: (_) => _setCanvasGrabbed(true),
+                            onPointerUp: (_) => _setCanvasGrabbed(false),
+                            onPointerCancel: (_) => _setCanvasGrabbed(false),
+                            child: MouseRegion(
                               key: const ValueKey<String>(
-                                'c2pa-history-viewer',
+                                'c2pa-history-pan-region',
                               ),
-                              transformationController:
-                                  _transformationController,
-                              boundaryMargin: const EdgeInsets.all(
-                                double.infinity,
-                              ),
-                              minScale: _minScale,
-                              maxScale: _maxScale,
-                              constrained: false,
-                              onInteractionStart: (_) {
-                                if (_zoomMode != _ZoomMode.free) {
-                                  setState(() => _zoomMode = _ZoomMode.free);
-                                  widget.onZoomModeChanged?.call(_ZoomMode.free);
-                                }
-                              },
-                              onInteractionEnd: (_) => _setCanvasGrabbed(false),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  18,
-                                  24,
-                                  24,
+                              cursor: _isCanvasGrabbed
+                                  ? SystemMouseCursors.grabbing
+                                  : SystemMouseCursors.grab,
+                              child: InteractiveViewer(
+                                key: const ValueKey<String>(
+                                  'c2pa-history-viewer',
                                 ),
-                                child: SizedBox(
-                                  width: treeWidth,
-                                  height: treeHeight,
-                                  child: _C2paTreeCanvas(nodes: nodes),
+                                transformationController:
+                                    _transformationController,
+                                boundaryMargin: const EdgeInsets.all(
+                                  double.infinity,
+                                ),
+                                minScale: _minScale,
+                                maxScale: _maxScale,
+                                constrained: false,
+                                onInteractionStart: (_) {
+                                  if (_zoomMode != _ZoomMode.free) {
+                                    setState(() => _zoomMode = _ZoomMode.free);
+                                    widget.onZoomModeChanged?.call(
+                                      _ZoomMode.free,
+                                    );
+                                  }
+                                },
+                                onInteractionEnd: (_) =>
+                                    _setCanvasGrabbed(false),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    18,
+                                    24,
+                                    24,
+                                  ),
+                                  child: SizedBox(
+                                    width: treeWidth,
+                                    height: treeHeight,
+                                    child: _C2paTreeCanvas(nodes: nodes),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ), // closes Listener
+                          ), // closes Listener
                         ), // closes GestureDetector
                         Positioned(
                           top: 12,
@@ -3294,14 +3370,35 @@ class _C2paTreeConnectorPainter extends CustomPainter {
   bool shouldRepaint(_C2paTreeConnectorPainter oldDelegate) => true;
 }
 
-class _C2paTechnicalView extends StatelessWidget {
+enum _C2paJsonViewMode { tree, raw }
+
+class _C2paTechnicalView extends StatefulWidget {
   const _C2paTechnicalView({required this.report});
 
   final C2paReport? report;
 
   @override
+  State<_C2paTechnicalView> createState() => _C2paTechnicalViewState();
+}
+
+class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
+  _C2paJsonViewMode _viewMode = _C2paJsonViewMode.raw;
+  final TextEditingController _searchController = TextEditingController();
+  final Set<String> _expandedPaths = <String>{r'$'};
+  final Set<String> _searchExpandedPaths = <String>{};
+  final Set<String> _searchCollapsedPaths = <String>{};
+  bool _hasUserChangedJsonExpansion = false;
+  String _search = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final report = this.report; // promote to non-nullable via flow analysis
+    final report = widget.report;
     if (report == null) {
       return const _C2paTabEmptyState(
         icon: Icons.fact_check_outlined,
@@ -3310,7 +3407,12 @@ class _C2paTechnicalView extends StatelessWidget {
       );
     }
     return ListView(
-      padding: EdgeInsets.fromLTRB(18, _c2paSectionGap, 18, 18 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        _c2paSectionGap,
+        18,
+        18 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: <Widget>[
         Row(
           children: <Widget>[
@@ -3343,11 +3445,18 @@ class _C2paTechnicalView extends StatelessWidget {
             Expanded(
               child: Text(
                 'Raw manifest JSON',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
+            if (!_isMobile) ...<Widget>[
+              _C2paJsonModeSwitch(
+                mode: _viewMode,
+                onChanged: (mode) => setState(() => _viewMode = mode),
+              ),
+              const SizedBox(width: 8),
+            ],
             TextButton.icon(
               key: const ValueKey<String>('copy-c2pa-json'),
               onPressed: () {
@@ -3362,18 +3471,543 @@ class _C2paTechnicalView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            border: Border.all(color: _c2paCardBorder),
-            borderRadius: BorderRadius.circular(14),
+        if (!_isMobile && _viewMode == _C2paJsonViewMode.tree)
+          _C2paJsonTree(
+            source: report.rawJson,
+            searchController: _searchController,
+            search: _search,
+            expandedPaths: _expandedPaths,
+            expandAllByDefault: !_hasUserChangedJsonExpansion,
+            searchExpandedPaths: _searchExpandedPaths,
+            searchCollapsedPaths: _searchCollapsedPaths,
+            onSearchChanged: (value) => setState(() {
+              _search = value;
+              _searchExpandedPaths.clear();
+              _searchCollapsedPaths.clear();
+            }),
+            onToggle: (path, isExpanded) => setState(() {
+              _hasUserChangedJsonExpansion = true;
+              if (_search.isNotEmpty) {
+                if (isExpanded) {
+                  _searchExpandedPaths.remove(path);
+                  _searchCollapsedPaths.add(path);
+                } else {
+                  _searchCollapsedPaths.remove(path);
+                  _searchExpandedPaths.add(path);
+                }
+              } else if (!_expandedPaths.add(path)) {
+                _expandedPaths.remove(path);
+              }
+            }),
+            onExpandAll: (paths) => setState(() {
+              _hasUserChangedJsonExpansion = true;
+              if (_search.isNotEmpty) {
+                _searchCollapsedPaths.clear();
+                _searchExpandedPaths.addAll(paths);
+              }
+              _expandedPaths.addAll(paths);
+            }),
+            onCollapseAll: (paths) => setState(() {
+              _hasUserChangedJsonExpansion = true;
+              if (_search.isNotEmpty) {
+                _searchExpandedPaths.clear();
+                _searchCollapsedPaths.addAll(paths);
+              }
+              _expandedPaths.removeWhere((path) => path != r'$');
+            }),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              border: Border.all(color: _c2paCardBorder),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: SelectableText.rich(_highlightJson(report.rawJson)),
           ),
-          child: SelectableText.rich(_highlightJson(report.rawJson)),
-        ),
       ],
     );
   }
+}
+
+class _C2paJsonModeSwitch extends StatelessWidget {
+  const _C2paJsonModeSwitch({required this.mode, required this.onChanged});
+
+  final _C2paJsonViewMode mode;
+  final ValueChanged<_C2paJsonViewMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<_C2paJsonViewMode>(
+    key: const ValueKey<String>('c2pa-json-view-mode'),
+    segments: const <ButtonSegment<_C2paJsonViewMode>>[
+      ButtonSegment(value: _C2paJsonViewMode.tree, label: Text('Tree view')),
+      ButtonSegment(value: _C2paJsonViewMode.raw, label: Text('Raw JSON')),
+    ],
+    selected: <_C2paJsonViewMode>{mode},
+    onSelectionChanged: (selection) => onChanged(selection.first),
+    showSelectedIcon: false,
+    style: const ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+  );
+}
+
+class _C2paJsonTree extends StatefulWidget {
+  const _C2paJsonTree({
+    required this.source,
+    required this.searchController,
+    required this.search,
+    required this.expandedPaths,
+    required this.expandAllByDefault,
+    required this.searchExpandedPaths,
+    required this.searchCollapsedPaths,
+    required this.onSearchChanged,
+    required this.onToggle,
+    required this.onExpandAll,
+    required this.onCollapseAll,
+  });
+
+  final String source;
+  final TextEditingController searchController;
+  final String search;
+  final Set<String> expandedPaths;
+  final bool expandAllByDefault;
+  final ValueChanged<String> onSearchChanged;
+  final void Function(String path, bool isExpanded) onToggle;
+  final Set<String> searchExpandedPaths;
+  final Set<String> searchCollapsedPaths;
+  final ValueChanged<Set<String>> onExpandAll;
+  final ValueChanged<Set<String>> onCollapseAll;
+
+  @override
+  State<_C2paJsonTree> createState() => _C2paJsonTreeState();
+}
+
+class _C2paJsonTreeState extends State<_C2paJsonTree> {
+  _C2paJsonNode? _root;
+  Set<String> _containerPaths = <String>{};
+  String? _parseError;
+
+  String get source => widget.source;
+  TextEditingController get searchController => widget.searchController;
+  String get search => widget.search;
+  Set<String> get expandedPaths => widget.expandedPaths;
+  bool get expandAllByDefault => widget.expandAllByDefault;
+  Set<String> get searchExpandedPaths => widget.searchExpandedPaths;
+  Set<String> get searchCollapsedPaths => widget.searchCollapsedPaths;
+  ValueChanged<String> get onSearchChanged => widget.onSearchChanged;
+  void Function(String path, bool isExpanded) get onToggle => widget.onToggle;
+  ValueChanged<Set<String>> get onExpandAll => widget.onExpandAll;
+  ValueChanged<Set<String>> get onCollapseAll => widget.onCollapseAll;
+
+  @override
+  void initState() {
+    super.initState();
+    _parseSource();
+  }
+
+  @override
+  void didUpdateWidget(_C2paJsonTree oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source) _parseSource();
+  }
+
+  void _parseSource() {
+    try {
+      final decoded = jsonDecode(source);
+      final root = _C2paJsonNode.fromValue(decoded, r'$');
+      _root = root;
+      _containerPaths = root.containerPaths;
+      _parseError = null;
+    } catch (_) {
+      _root = null;
+      _containerPaths = <String>{};
+      _parseError = 'The manifest is not valid JSON.';
+    }
+  }
+
+  Set<String> _matchingPaths(_C2paJsonNode root, String query) {
+    if (query.isEmpty) return const <String>{};
+    final normalizedQuery = query.toLowerCase();
+    final matchingPaths = <String>{};
+
+    bool visit(_C2paJsonNode node) {
+      final directMatch = _jsonSearchText(node).toLowerCase().contains(
+        normalizedQuery,
+      );
+      var descendantMatch = false;
+      for (final child in node.children) {
+        if (visit(child)) descendantMatch = true;
+      }
+      final matched = directMatch || descendantMatch;
+      if (matched) matchingPaths.add(node.path);
+      return matched;
+    }
+
+    visit(root);
+    return matchingPaths;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final root = _root;
+    if (root == null) {
+      return _C2paJsonError(message: _parseError!);
+    }
+    final topLevelNodes = root.children.isEmpty ? <_C2paJsonNode>[root] : root.children;
+    final matchingPaths = _matchingPaths(root, search);
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: _c2paCardBorder),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final actions = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextButton.icon(
+                      key: const ValueKey<String>('c2pa-json-expand-all'),
+                      onPressed: () => onExpandAll(_containerPaths),
+                      icon: const Icon(Icons.unfold_more, size: 17),
+                      label: const Text('Expand all'),
+                    ),
+                    const SizedBox(width: 18),
+                    TextButton.icon(
+                      key: const ValueKey<String>('c2pa-json-collapse-all'),
+                      onPressed: () => onCollapseAll(_containerPaths),
+                      icon: const Icon(Icons.unfold_less, size: 17),
+                      label: const Text('Collapse all'),
+                    ),
+                  ],
+                );
+                final searchField = TextField(
+                  controller: searchController,
+                  onChanged: onSearchChanged,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'Search',
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                      borderSide: BorderSide(color: _c2paCardBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                      borderSide: BorderSide(color: _c2paAccent, width: 1.5),
+                    ),
+                  ),
+                );
+                if (constraints.maxWidth < 600) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      actions,
+                      const SizedBox(height: 8),
+                      searchField,
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Expanded(child: actions),
+                    const SizedBox(width: 18),
+                    SizedBox(width: 220, child: searchField),
+                  ],
+                );
+              },
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
+            child: SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: topLevelNodes
+                    .map(
+                      (node) => _C2paJsonNodeView(
+                        node: node,
+                        depth: 0,
+                        search: search,
+                        matchingPaths: matchingPaths,
+                        expandedPaths: expandedPaths,
+                        expandAllByDefault: expandAllByDefault,
+                        searchExpandedPaths: searchExpandedPaths,
+                        searchCollapsedPaths: searchCollapsedPaths,
+                        onToggle: onToggle,
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _C2paJsonError extends StatelessWidget {
+  const _C2paJsonError({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(18),
+    child: Text(message, style: const TextStyle(color: _c2paMutedText)),
+  );
+}
+
+class _C2paJsonNode {
+  _C2paJsonNode({required this.label, required this.value, required this.path});
+
+  factory _C2paJsonNode.fromValue(dynamic value, String path, {String? label}) {
+    final node = _C2paJsonNode(label: label, value: value, path: path);
+    if (value is Map) {
+      node.children = value.entries
+          .map(
+            (entry) => _C2paJsonNode.fromValue(
+              entry.value,
+              '$path.${entry.key}',
+              label: '${entry.key}',
+            ),
+          )
+          .toList();
+    } else if (value is List) {
+      node.children = value
+          .asMap()
+          .entries
+          .map(
+            (entry) => _C2paJsonNode.fromValue(
+              entry.value,
+              '$path[${entry.key}]',
+              label: '${entry.key}',
+            ),
+          )
+          .toList();
+    }
+    return node;
+  }
+
+  final String? label;
+  final dynamic value;
+  final String path;
+  List<_C2paJsonNode> children = <_C2paJsonNode>[];
+
+  bool get isContainer => children.isNotEmpty || value is Map || value is List;
+
+  late final Set<String> containerPaths = <String>{
+    if (isContainer) path,
+    for (final child in children) ...child.containerPaths,
+  };
+
+  String get typeLabel => value is Map
+      ? 'Object (${children.length} ${children.length == 1 ? 'key' : 'keys'})'
+      : 'Array (${children.length} ${children.length == 1 ? 'item' : 'items'})';
+}
+
+String _jsonSearchText(_C2paJsonNode node) =>
+    '${node.label ?? ''} ${node.isContainer ? node.typeLabel : _valueText(node.value)}';
+
+class _C2paJsonNodeView extends StatelessWidget {
+  const _C2paJsonNodeView({
+    required this.node,
+    required this.depth,
+    required this.search,
+    required this.matchingPaths,
+    required this.expandedPaths,
+    required this.expandAllByDefault,
+    required this.searchExpandedPaths,
+    required this.searchCollapsedPaths,
+    required this.onToggle,
+  });
+
+  final _C2paJsonNode node;
+  final int depth;
+  final String search;
+  final Set<String> matchingPaths;
+  final Set<String> expandedPaths;
+  final bool expandAllByDefault;
+  final Set<String> searchExpandedPaths;
+  final Set<String> searchCollapsedPaths;
+  final void Function(String path, bool isExpanded) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final isExpanded = search.isNotEmpty
+        ? searchCollapsedPaths.contains(node.path)
+            ? false
+            : searchExpandedPaths.contains(node.path) ||
+                matchingPaths.contains(node.path)
+        : expandAllByDefault || expandedPaths.contains(node.path);
+    final children = node.children;
+    final hasChildren = node.isContainer;
+    final keySpan = _highlightJsonFragment(
+      node.label == null ? r'$ ' : '${node.label}: ',
+      search,
+      _c2paJsonKeyStyle,
+    );
+    final valueSpan = _highlightJsonFragment(
+      hasChildren ? node.typeLabel : _valueText(node.value),
+      search,
+      hasChildren ? _c2paJsonTypeStyle : _c2paJsonValueStyle(node.value),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        InkWell(
+          onTap: hasChildren ? () => onToggle(node.path, isExpanded) : null,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: EdgeInsets.only(left: depth * 16.0, top: 3, bottom: 3),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 18,
+                  child: hasChildren
+                      ? Icon(
+                          isExpanded
+                              ? Icons.keyboard_arrow_down
+                              : Icons.chevron_right,
+                          size: 16,
+                          color: _c2paMutedText,
+                        )
+                      : null,
+                ),
+                if (_isMobile) ...<Widget>[
+                  Expanded(
+                    flex: 5,
+                    child: Text.rich(keySpan, overflow: TextOverflow.ellipsis),
+                  ),
+                  Expanded(
+                    flex: 6,
+                    child: Text.rich(
+                      valueSpan,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ] else ...<Widget>[
+                  Text.rich(keySpan),
+                  Flexible(
+                    child: Text.rich(
+                      valueSpan,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (hasChildren && isExpanded)
+          ...children.map(
+            (child) => _C2paJsonNodeView(
+              node: child,
+              depth: depth + 1,
+              search: search,
+              matchingPaths: matchingPaths,
+              expandedPaths: expandedPaths,
+              expandAllByDefault: expandAllByDefault,
+              searchExpandedPaths: searchExpandedPaths,
+              searchCollapsedPaths: searchCollapsedPaths,
+              onToggle: onToggle,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+String _valueText(dynamic value) {
+  if (value == null) return 'null';
+  if (value is String) return '"$value"';
+  return '$value';
+}
+
+final String _c2paJsonFontFamily =
+    Platform.isIOS || Platform.isMacOS ? 'Menlo' : 'monospace';
+final TextStyle _c2paJsonKeyStyle = TextStyle(
+  fontFamily: _c2paJsonFontFamily,
+  fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
+  color: Color(0xFF20242C),
+  fontSize: 12,
+  height: 1.2,
+);
+final TextStyle _c2paJsonTypeStyle = TextStyle(
+  fontFamily: _c2paJsonFontFamily,
+  fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
+  color: _c2paMutedText,
+  fontSize: 12,
+  height: 1.2,
+);
+final TextStyle _c2paJsonStringStyle = TextStyle(
+  fontFamily: _c2paJsonFontFamily,
+  fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
+  color: const Color(0xFF168A58),
+  fontSize: 12,
+  height: 1.2,
+);
+final TextStyle _c2paJsonNumberStyle = TextStyle(
+  fontFamily: _c2paJsonFontFamily,
+  fontFamilyFallback: const <String>['SF Mono', 'Roboto Mono', 'Courier New'],
+  color: const Color(0xFFB14D2D),
+  fontSize: 12,
+  height: 1.2,
+);
+TextStyle _c2paJsonValueStyle(dynamic value) =>
+    value is String ? _c2paJsonStringStyle : _c2paJsonNumberStyle;
+
+TextSpan _highlightJsonFragment(
+  String text,
+  String query,
+  TextStyle baseStyle,
+) {
+  if (query.isEmpty) return TextSpan(text: text, style: baseStyle);
+  final spans = <InlineSpan>[];
+  final lowerText = text.toLowerCase();
+  final lowerQuery = query.toLowerCase();
+  var offset = 0;
+  while (true) {
+    final matchStart = lowerText.indexOf(lowerQuery, offset);
+    if (matchStart < 0) {
+      if (offset < text.length) {
+        spans.add(TextSpan(text: text.substring(offset)));
+      }
+      break;
+    }
+    if (matchStart > offset) {
+      spans.add(TextSpan(text: text.substring(offset, matchStart)));
+    }
+    spans.add(
+      TextSpan(
+        text: text.substring(matchStart, matchStart + query.length),
+        style: baseStyle.copyWith(
+          backgroundColor: const Color(0xFFFFE36E),
+          color: const Color(0xFF20242C),
+        ),
+      ),
+    );
+    offset = matchStart + query.length;
+  }
+  return TextSpan(style: baseStyle, children: spans);
 }
 
 class _C2paValidationTile extends StatelessWidget {
@@ -3457,7 +4091,9 @@ TextSpan _highlightJson(String source) {
     spans.add(TextSpan(text: token, style: style));
     offset = match.end;
   }
-  if (offset < source.length) spans.add(TextSpan(text: source.substring(offset)));
+  if (offset < source.length) {
+    spans.add(TextSpan(text: source.substring(offset)));
+  }
   return TextSpan(style: baseStyle, children: spans);
 }
 
