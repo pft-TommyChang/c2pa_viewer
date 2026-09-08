@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -66,7 +67,7 @@ class _ViewerHomeState extends State<_ViewerHome> {
         ? [widget.initialPath!]
         : [];
     _mediaOpenChannel.setMethodCallHandler(_handleMediaOpenMethodCall);
-    unawaited(_consumePendingMediaFiles());
+    unawaited(_consumePendingMediaFilesWithRetry());
     if (!Platform.isIOS && !Platform.isAndroid) {
       unawaited(
         _inspectionService.aiMetadataService.refreshTrustListIfNeeded(),
@@ -85,31 +86,70 @@ class _ViewerHomeState extends State<_ViewerHome> {
     if (call.method != 'mediaFilesOpened') {
       throw MissingPluginException('Unknown method ${call.method}');
     }
-    await _consumePendingMediaFiles();
+
+    // Native sends the paths with the notification. This avoids depending on
+    // the timing of a second channel call while the app is being foregrounded.
+    final directPaths = call.arguments is List
+        ? (call.arguments as List)
+              .whereType<String>()
+              .where((path) => path.isNotEmpty)
+              .toList()
+        : const <String>[];
+    if (directPaths.isNotEmpty) {
+      _acceptPendingPaths(directPaths);
+      // Read the native queue as well. The direct event is the source of
+      // truth; this read covers cold-start races where the event was missed.
+      await _consumePendingMediaFilesWithRetry();
+      return null;
+    }
+
+    await _consumePendingMediaFilesWithRetry();
     return null;
   }
 
-  Future<void> _consumePendingMediaFiles() async {
+  void _acceptPendingPaths(List<String> paths) {
+    if (!mounted || paths.isEmpty) return;
+    final uniquePaths = <String>[];
+    for (final path in paths) {
+      if (!uniquePaths.contains(path)) uniquePaths.add(path);
+    }
+    if (listEquals(uniquePaths, _pendingPaths)) return;
+    setState(() {
+      _pendingPaths = uniquePaths;
+      _openGeneration++;
+    });
+  }
+
+  Future<void> _consumePendingMediaFilesWithRetry({
+    int retriesRemaining = 10,
+  }) async {
     try {
       final paths = await _mediaOpenChannel.invokeListMethod<String>(
         'consumePendingMediaFiles',
       );
       final valid = paths?.where((p) => p.isNotEmpty).toList() ?? [];
-      if (mounted && valid.isNotEmpty) {
-        setState(() {
-          _pendingPaths = valid;
-          _openGeneration++;
-        });
-      }
+      _acceptPendingPaths(valid);
     } on MissingPluginException {
-      // Tests and runners without the native channel can still use drag/drop.
+      // The implicit Flutter engine can finish booting just after initState.
+      // Retry briefly so a native handoff is not lost during that window.
+      if (retriesRemaining > 0 && mounted) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await _consumePendingMediaFilesWithRetry(
+          retriesRemaining: retriesRemaining - 1,
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('[MediaOpen] Flutter consume failed: $error');
+      debugPrint('$stackTrace');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return C2paBrowserPage(
-      key: const Key('c2pa-browser'),
+      // Recreate the browser for each native handoff so the incoming file is
+      // handled by initState after the new page is mounted.
+      key: ValueKey<String>('c2pa-browser-$_openGeneration'),
       pendingPaths: _pendingPaths,
       openGeneration: _openGeneration,
       mediaLoader: _inspectionService.inspect,

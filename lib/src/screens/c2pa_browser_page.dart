@@ -204,7 +204,13 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
     super.didUpdateWidget(oldWidget);
     if (widget.openGeneration != oldWidget.openGeneration &&
         widget.pendingPaths.isNotEmpty) {
-      unawaited(_openPendingPaths(widget.pendingPaths));
+      // Defer the handoff until the rebuilt page has completed its frame.
+      final paths = List<String>.of(widget.pendingPaths);
+      final generation = widget.openGeneration;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.openGeneration != generation) return;
+        unawaited(_openPendingPaths(paths));
+      });
     }
   }
 

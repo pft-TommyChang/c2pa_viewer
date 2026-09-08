@@ -251,7 +251,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.text('History'));
+    await tester.tap(find.byType(Tab).at(1));
     await tester.pumpAndSettle();
     await tester.pump();
 
@@ -296,6 +296,52 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(panRegion().cursor, SystemMouseCursors.grab);
+  });
+
+  testWidgets('opens media delivered after the initial build', (
+    WidgetTester tester,
+  ) async {
+    const sourcePath = '/tmp/shared-media.png';
+    final inspectedPaths = <String>[];
+
+    Widget buildViewer({
+      required List<String> pendingPaths,
+      required int generation,
+    }) {
+      return MaterialApp(
+        home: C2paBrowserPage(
+          key: const ValueKey<String>('shared-media-viewer'),
+          pendingPaths: pendingPaths,
+          openGeneration: generation,
+          checkForUpdatesOnLaunch: false,
+          mediaLoader: (path) async {
+            inspectedPaths.add(path);
+            return VideoClipInfo(
+              path: path,
+              name: 'shared-media.png',
+              duration: Duration.zero,
+              width: 100,
+              height: 100,
+              hasAudio: false,
+              mediaKind: MediaKind.photo,
+              aiMetadata: const AiMediaMetadata(c2paStatus: C2paStatus.absent),
+            );
+          },
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      buildViewer(pendingPaths: const <String>[], generation: 0),
+    );
+    await tester.pump();
+    await tester.pumpWidget(
+      buildViewer(pendingPaths: const <String>[sourcePath], generation: 1),
+    );
+    await tester.pumpAndSettle();
+
+    expect(inspectedPaths, <String>[sourcePath]);
+    expect(find.text('No Content Credentials'), findsOneWidget);
   });
 
   testWidgets('shows C2PA signer and manifest metadata', (tester) async {

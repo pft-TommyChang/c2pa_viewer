@@ -82,7 +82,7 @@ final class SharedMediaQueue {
   }
 
   private func isSupportedMediaFile(_ url: URL) -> Bool {
-    supportedExtensions.contains(url.pathExtension.lowercased())
+    mediaExtension(for: url) != nil
   }
 
   private func creationDateCompare(_ lhs: URL, _ rhs: URL) -> Bool {
@@ -94,9 +94,52 @@ final class SharedMediaQueue {
   }
 
   private func uniqueTemporaryURL(for sourceURL: URL, directory: URL) -> URL {
-    let ext = sourceURL.pathExtension
+    let ext = mediaExtension(for: sourceURL) ?? sourceURL.pathExtension
     let filename = UUID().uuidString
     let component = ext.isEmpty ? filename : "\(filename).\(ext)"
     return directory.appendingPathComponent(component, isDirectory: false)
+  }
+
+  private func mediaExtension(for url: URL) -> String? {
+    let sourceExtension = url.pathExtension.lowercased()
+    if supportedExtensions.contains(sourceExtension) {
+      return sourceExtension
+    }
+
+    guard let handle = try? FileHandle(forReadingFrom: url) else {
+      return nil
+    }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: 16) else {
+      return nil
+    }
+    let bytes = [UInt8](data)
+
+    if bytes.starts(with: [0xFF, 0xD8, 0xFF]) {
+      return "jpg"
+    }
+    if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+      return "png"
+    }
+    if bytes.count >= 12,
+      bytes[0..<4].elementsEqual([0x52, 0x49, 0x46, 0x46]),
+      bytes[8..<12].elementsEqual([0x57, 0x45, 0x42, 0x50])
+    {
+      return "webp"
+    }
+    if bytes.count >= 12,
+      bytes[4..<8].elementsEqual([0x66, 0x74, 0x79, 0x70])
+    {
+      let brand = String(bytes: bytes[8..<12], encoding: .ascii)
+      if brand == "heic" || brand == "heix" || brand == "hevc" || brand == "hevx" {
+        return "heic"
+      }
+      if brand == "qt  " {
+        return "mov"
+      }
+      return "mp4"
+    }
+
+    return nil
   }
 }
