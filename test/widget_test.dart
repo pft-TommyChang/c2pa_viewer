@@ -494,8 +494,9 @@ void main() {
     final rawHeader = find.text('Manifest');
     expect(rawHeader, findsOneWidget);
     final headerTop = tester.getTopLeft(rawHeader).dy;
-    expect(headerTop, greaterThan(420));
-    expect(headerTop, lessThan(550));
+    final viewportTop = tester.getTopLeft(scrollable).dy;
+    expect(headerTop, greaterThanOrEqualTo(viewportTop));
+    expect(headerTop - viewportTop, lessThanOrEqualTo(24));
     expect(
       find.byKey(const ValueKey<String>('c2pa-search-field')),
       findsOneWidget,

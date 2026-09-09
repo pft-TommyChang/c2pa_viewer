@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -3527,20 +3528,92 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
     _scheduleScrollMatchIntoView(report.rawJson, position);
   }
 
+  RenderObject? _findTextRenderObject(RenderObject root) {
+    RenderObject? textRenderObject;
+
+    void visit(RenderObject child) {
+      if (textRenderObject != null) return;
+      if (child is RenderEditable || child is RenderParagraph) {
+        textRenderObject = child;
+        return;
+      }
+      child.visitChildren(visit);
+    }
+
+    root.visitChildren(visit);
+    return textRenderObject;
+  }
+
   void _scrollMatchIntoView(String source, int position) {
     if (!_contentScrollController.hasClients) return;
+    // Tree mode scrolls its active node from _C2paJsonTreeState using the
+    // actual node render object. Raw source offsets do not map to tree rows.
+    if (_viewMode == _C2paJsonViewMode.tree) return;
     final jsonBox = _jsonSectionKey.currentContext?.findRenderObject();
     final viewportBox = _contentViewportKey.currentContext?.findRenderObject();
     if (jsonBox is! RenderBox || viewportBox is! RenderBox) return;
-    final line = '\n'.allMatches(source.substring(0, position)).length;
-    const lineHeight = 11.5 * 1.55;
-    final jsonTop = jsonBox.localToGlobal(Offset.zero).dy;
+
+    // Prefer the actual text render object used by SelectableText. This keeps
+    // the scroll position in sync with Flutter's real text wrapping, font
+    // metrics, and text scaling instead of estimating it separately.
+    double? matchTopGlobal;
+    double? matchBottomGlobal;
+    final textRenderObject = _viewMode == _C2paJsonViewMode.raw
+        ? _findTextRenderObject(jsonBox)
+        : null;
+    if (textRenderObject != null && _search.isNotEmpty) {
+      final selection = TextSelection(
+        baseOffset: position,
+        extentOffset: position + _search.length,
+      );
+      final boxes = switch (textRenderObject) {
+        RenderEditable editable => editable.getBoxesForSelection(selection),
+        RenderParagraph paragraph => paragraph.getBoxesForSelection(selection),
+        _ => const <TextBox>[],
+      };
+      if (boxes.isNotEmpty) {
+        final textRenderBox = textRenderObject as RenderBox;
+        matchTopGlobal = boxes
+            .map((box) => textRenderBox.localToGlobal(Offset(0, box.top)).dy)
+            .reduce(math.min);
+        matchBottomGlobal = boxes
+            .map((box) => textRenderBox.localToGlobal(Offset(0, box.bottom)).dy)
+            .reduce(math.max);
+      }
+    }
+
+    // Keep a layout-based fallback if the platform does not expose the text
+    // render object used by SelectableText.
+    if (matchTopGlobal == null || matchBottomGlobal == null) {
+      final textPainter = TextPainter(
+        text: _highlightJson(source, query: _search, activeMatch: _activeMatch),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: math.max(0.0, jsonBox.size.width - 28));
+      final caretOffset = textPainter.getOffsetForCaret(
+        TextPosition(offset: position),
+        Rect.zero,
+      );
+      final jsonTop = jsonBox.localToGlobal(Offset.zero).dy;
+      matchTopGlobal = jsonTop + 14 + caretOffset.dy;
+      matchBottomGlobal = matchTopGlobal + textPainter.preferredLineHeight;
+    }
+
     final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
-    final matchY = jsonTop - viewportTop + 14 + line * lineHeight;
-    final centeredOffset =
-        _contentScrollController.offset + matchY - viewportBox.size.height / 2;
+    final matchTop = matchTopGlobal - viewportTop;
+    final matchBottom = matchBottomGlobal - viewportTop;
+    const safeTop = 12.0;
+    const safeBottom = 12.0;
+    final viewportHeight = viewportBox.size.height;
+    var targetOffset = _contentScrollController.offset;
+    if (matchTop < safeTop) {
+      targetOffset += matchTop - safeTop;
+    } else if (matchBottom > viewportHeight - safeBottom) {
+      targetOffset += matchBottom - (viewportHeight - safeBottom);
+    } else {
+      return;
+    }
     _contentScrollController.jumpTo(
-      centeredOffset.clamp(
+      targetOffset.clamp(
         0.0,
         _contentScrollController.position.maxScrollExtent,
       ),
@@ -3560,9 +3633,7 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
       final headerTop = headerBox.localToGlobal(Offset.zero).dy;
       final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
       final targetOffset =
-          _contentScrollController.offset +
-          (headerTop - viewportTop) -
-          (viewportBox.size.height - headerBox.size.height) / 2;
+          _contentScrollController.offset + (headerTop - viewportTop) - 8;
       _contentScrollController.jumpTo(
         targetOffset.clamp(
           0.0,
@@ -3977,6 +4048,8 @@ class _C2paJsonTreeState extends State<_C2paJsonTree> {
   _C2paJsonNode? _root;
   Set<String> _containerPaths = <String>{};
   String? _parseError;
+  final Map<String, GlobalKey> _nodeKeys = <String, GlobalKey>{};
+  String? _lastEnsuredActivePath;
 
   String get source => widget.source;
   String get search => widget.search;
@@ -3987,6 +4060,29 @@ class _C2paJsonTreeState extends State<_C2paJsonTree> {
   void Function(String path, bool isExpanded) get onToggle => widget.onToggle;
   ValueChanged<Set<String>> get onExpandAll => widget.onExpandAll;
   ValueChanged<Set<String>> get onCollapseAll => widget.onCollapseAll;
+
+  GlobalKey _nodeKeyForPath(String path) => _nodeKeys.putIfAbsent(
+    path,
+    () => GlobalKey(debugLabel: 'c2pa-json-node-$path'),
+  );
+
+  void _ensureActiveNodeVisible(String? activePath) {
+    if (activePath == _lastEnsuredActivePath) return;
+    _lastEnsuredActivePath = activePath;
+    if (activePath == null) return;
+    final nodeKey = _nodeKeyForPath(activePath);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final nodeContext = nodeKey.currentContext;
+      if (nodeContext == null) return;
+      Scrollable.ensureVisible(
+        nodeContext,
+        alignment: 0.35,
+        duration: Duration.zero,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
 
   @override
   void initState() {
@@ -4067,6 +4163,7 @@ class _C2paJsonTreeState extends State<_C2paJsonTree> {
     final activePath = directMatchingPaths.isEmpty
         ? null
         : directMatchingPaths[widget.activeMatch % directMatchingPaths.length];
+    _ensureActiveNodeVisible(activePath);
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
@@ -4125,6 +4222,7 @@ class _C2paJsonTreeState extends State<_C2paJsonTree> {
                         searchExpandedPaths: searchExpandedPaths,
                         searchCollapsedPaths: searchCollapsedPaths,
                         onToggle: onToggle,
+                        nodeKeyForPath: _nodeKeyForPath,
                       ),
                     )
                     .toList(growable: false),
@@ -4211,6 +4309,7 @@ class _C2paJsonNodeView extends StatelessWidget {
     required this.searchExpandedPaths,
     required this.searchCollapsedPaths,
     required this.onToggle,
+    required this.nodeKeyForPath,
   });
 
   final _C2paJsonNode node;
@@ -4223,6 +4322,7 @@ class _C2paJsonNodeView extends StatelessWidget {
   final Set<String> searchExpandedPaths;
   final Set<String> searchCollapsedPaths;
   final void Function(String path, bool isExpanded) onToggle;
+  final GlobalKey Function(String path) nodeKeyForPath;
 
   @override
   Widget build(BuildContext context) {
@@ -4250,6 +4350,7 @@ class _C2paJsonNodeView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         InkWell(
+          key: nodeKeyForPath(node.path),
           onTap: hasChildren ? () => onToggle(node.path, isExpanded) : null,
           borderRadius: BorderRadius.circular(6),
           child: Padding(
@@ -4306,6 +4407,7 @@ class _C2paJsonNodeView extends StatelessWidget {
               searchExpandedPaths: searchExpandedPaths,
               searchCollapsedPaths: searchCollapsedPaths,
               onToggle: onToggle,
+              nodeKeyForPath: nodeKeyForPath,
             ),
           ),
       ],
