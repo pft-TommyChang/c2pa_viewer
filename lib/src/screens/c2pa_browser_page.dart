@@ -542,13 +542,25 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft && _canGoPrev) {
-      unawaited(_navigatePrev());
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight && _canGoNext) {
-      unawaited(_navigateNext());
-      return KeyEventResult.handled;
+    final isTextFieldFocused =
+        FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    if (!isTextFieldFocused &&
+        (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.arrowRight)) {
+      final delta = event.logicalKey == LogicalKeyboardKey.arrowLeft ? -1 : 1;
+      final nextTab = _tabController.index + delta;
+      if (nextTab >= 0 && nextTab < _tabController.length) {
+        _tabController.animateTo(nextTab);
+        return KeyEventResult.handled;
+      }
+      if (delta < 0 && _canGoPrev) {
+        unawaited(_navigatePrev());
+        return KeyEventResult.handled;
+      }
+      if (delta > 0 && _canGoNext) {
+        unawaited(_navigateNext());
+        return KeyEventResult.handled;
+      }
     }
     final technicalView = _technicalViewKey.currentState;
     if (_tabController.index == 2 && technicalView != null) {
@@ -3656,14 +3668,14 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
                     children: <Widget>[
                       if (!_isMobile)
                         Text(
-                          'Raw manifest JSON',
+                          'Manifest',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         )
                       else
                         Expanded(
                           child: Text(
-                            'Raw manifest JSON',
+                            'Manifest',
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
@@ -3912,15 +3924,22 @@ class _C2paJsonModeSwitch extends StatelessWidget {
   Widget build(BuildContext context) => SegmentedButton<_C2paJsonViewMode>(
     key: const ValueKey<String>('c2pa-json-view-mode'),
     segments: const <ButtonSegment<_C2paJsonViewMode>>[
-      ButtonSegment(value: _C2paJsonViewMode.tree, label: Text('Tree view')),
-      ButtonSegment(value: _C2paJsonViewMode.raw, label: Text('Raw JSON')),
+      ButtonSegment(value: _C2paJsonViewMode.raw, label: Text('Raw')),
+      ButtonSegment(value: _C2paJsonViewMode.tree, label: Text('Tree')),
     ],
     selected: <_C2paJsonViewMode>{mode},
     onSelectionChanged: (selection) => onChanged(selection.first),
     showSelectedIcon: false,
     style: const ButtonStyle(
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity(horizontal: -2, vertical: -3),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      minimumSize: WidgetStatePropertyAll<Size>(Size(0, 28)),
+      padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: 8),
+      ),
+      textStyle: WidgetStatePropertyAll<TextStyle>(
+        TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
     ),
   );
 }

@@ -449,8 +449,37 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    final tabBar = find.byType(TabBar);
+    final tabController = tester.widget<TabBar>(tabBar).controller!;
+    expect(tabController.index, 0);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(tabController.index, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(tabController.index, 2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(tabController.index, 1);
+
     await tester.tap(find.byType(Tab).at(2));
     await tester.pumpAndSettle();
+
+    expect(find.text('Tree'), findsOneWidget);
+    expect(find.text('Raw'), findsOneWidget);
+    expect(find.text('Tree view'), findsNothing);
+    expect(find.text('Raw JSON'), findsNothing);
+    expect(
+      tester.getCenter(find.text('Raw')).dx,
+      lessThan(tester.getCenter(find.text('Tree')).dx),
+    );
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey<String>('c2pa-json-view-mode')))
+          .height,
+      lessThan(32),
+    );
 
     final scrollable = find.byType(Scrollable).at(1);
     tester.state<ScrollableState>(scrollable).position.jumpTo(0);
@@ -462,7 +491,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    final rawHeader = find.text('Raw manifest JSON');
+    final rawHeader = find.text('Manifest');
     expect(rawHeader, findsOneWidget);
     final headerTop = tester.getTopLeft(rawHeader).dy;
     expect(headerTop, greaterThan(420));
