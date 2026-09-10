@@ -701,7 +701,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                       // ClipRect prevents elastic-overscroll content from
                       // bleeding above the tab bar / page header on macOS.
                       child: ClipRect(
-                        child: !_hasMedia
+                        child: !_hasMedia && _isParsing
+                            ? const _C2paParsingView()
+                            : !_hasMedia
                             ? AnimatedOpacity(
                                 duration: const Duration(milliseconds: 140),
                                 opacity: _isDragging ? 0 : 1,
@@ -763,24 +765,6 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                     ),
                   ),
                 ),
-                // Full overlay with spinner only on the very first load
-                if (_isParsing && !_hasMedia)
-                  const Positioned.fill(
-                    child: ColoredBox(
-                      key: ValueKey<String>('c2pa-parsing-overlay'),
-                      color: Color(0xAAFFFCF7),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            CircularProgressIndicator(),
-                            SizedBox(height: 14),
-                            Text('Inspecting Content Credentials…'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -1532,6 +1516,32 @@ class _C2paAwaitingMediaView extends StatelessWidget {
     return Align(
       alignment: const Alignment(0, -0.2),
       child: _C2paDropPrompt(onTap: onTap, onTapFiles: onTapFiles),
+    );
+  }
+}
+
+class _C2paParsingView extends StatelessWidget {
+  const _C2paParsingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      key: ValueKey<String>('c2pa-parsing-view'),
+      color: _c2paPageBackground,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            SizedBox(height: 16),
+            Text('Inspecting Content Credentials…'),
+          ],
+        ),
+      ),
     );
   }
 }
