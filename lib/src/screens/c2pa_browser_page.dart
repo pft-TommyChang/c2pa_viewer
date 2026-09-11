@@ -2548,7 +2548,17 @@ class _ExifGroupTile extends StatelessWidget {
         if (expanded)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: SelectionArea(
+            child: _C2paCopySelectionArea(
+              rawAllText: entries.entries
+                  .map(
+                    (entry) => '${_friendlyMetaKey(entry.key)}${entry.value}',
+                  )
+                  .join(),
+              copyAllText: entries.entries
+                  .map(
+                    (entry) => '${_friendlyMetaKey(entry.key)} ${entry.value}',
+                  )
+                  .join('\n'),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2603,6 +2613,71 @@ class _ExifGroupTile extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Keeps a data table's layout unchanged while formatting a full selection for
+/// the clipboard. Flutter otherwise concatenates text from adjacent cells.
+class _C2paCopySelectionArea extends StatefulWidget {
+  const _C2paCopySelectionArea({
+    required this.rawAllText,
+    required this.copyAllText,
+    required this.child,
+  });
+
+  final String rawAllText;
+  final String copyAllText;
+  final Widget child;
+
+  @override
+  State<_C2paCopySelectionArea> createState() => _C2paCopySelectionAreaState();
+}
+
+class _C2paCopySelectionAreaState extends State<_C2paCopySelectionArea> {
+  String _selectedText = '';
+
+  Future<void> _copySelection() {
+    final text = _selectedText == widget.rawAllText
+        ? widget.copyAllText
+        : _selectedText;
+    return Clipboard.setData(ClipboardData(text: text));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
+          onInvoke: (_) {
+            unawaited(_copySelection());
+            return null;
+          },
+        ),
+      },
+      child: SelectionArea(
+        onSelectionChanged: (content) =>
+            _selectedText = content?.plainText ?? '',
+        contextMenuBuilder: (context, selectableRegionState) {
+          final buttons = selectableRegionState.contextMenuButtonItems
+              .map(
+                (item) => item.type == ContextMenuButtonType.copy
+                    ? item.copyWith(
+                        onPressed: () {
+                          unawaited(_copySelection());
+                          selectableRegionState.hideToolbar();
+                        },
+                      )
+                    : item,
+              )
+              .toList(growable: false);
+          return AdaptiveTextSelectionToolbar.buttonItems(
+            anchors: selectableRegionState.contextMenuAnchors,
+            buttonItems: buttons,
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }
@@ -2672,6 +2747,7 @@ class _C2paInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final visibleRows = rows.where((row) => row.$2 != null).toList();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2679,7 +2755,11 @@ class _C2paInfoCard extends StatelessWidget {
         border: Border.all(color: _c2paCardBorder),
         borderRadius: BorderRadius.circular(18),
       ),
-      child: SelectionArea(
+      child: _C2paCopySelectionArea(
+        rawAllText:
+            '$title${visibleRows.map((row) => '${row.$1}${row.$2}').join()}',
+        copyAllText:
+            '$title\n${visibleRows.map((row) => '${row.$1} ${row.$2}').join('\n')}',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
@@ -2763,7 +2843,11 @@ class _C2paActionTile extends StatelessWidget {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(left: 8, bottom: 14),
-            child: SelectionArea(
+            child: _C2paCopySelectionArea(
+              rawAllText:
+                  '${_friendlyC2paAction(action.action)}${<String>[if (action.softwareAgent != null) action.softwareAgent!, if (action.digitalSourceType != null) _shortC2paValue(action.digitalSourceType!)].join(' · ')}',
+              copyAllText:
+                  '${_friendlyC2paAction(action.action)}\n${<String>[if (action.softwareAgent != null) action.softwareAgent!, if (action.digitalSourceType != null) _shortC2paValue(action.digitalSourceType!)].join(' · ')}',
               child: ListTile(
                 tileColor: Colors.white,
                 shape: RoundedRectangleBorder(
@@ -4526,7 +4610,9 @@ class _C2paValidationTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       margin: const EdgeInsets.only(bottom: 7),
-      child: SelectionArea(
+      child: _C2paCopySelectionArea(
+        rawAllText: '${entry.code}${entry.explanation ?? ''}',
+        copyAllText: '${entry.code}\n${entry.explanation ?? ''}',
         child: ListTile(
           leading: Icon(icon, color: color),
           title: Text(
