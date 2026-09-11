@@ -284,9 +284,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
   }
 
   Future<void> _pickMedia() async {
-    final mobile = Platform.isIOS || Platform.isAndroid;
+    final mobile = Platform.isIOS;
     if (mobile) {
-      // On mobile, always open Camera Roll via PHPickerViewController so the
+      // On iOS, always open Camera Roll via PHPickerViewController so the
       // original binary (including embedded C2PA) is returned intact.
       // ImagePicker re-encodes and strips C2PA, so we use the native channel.
       final originalPath = await MobileC2paService.pickOriginalMedia();
@@ -430,7 +430,11 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
       if (isMobile && mounted) {
         try {
           await MobileC2paService.saveToPhotoLibrary(outputPath);
-          _showErrorToast('Saved media with C2PA to Photos.');
+          _showErrorToast(
+            options.mode == C2paWriteMode.remove
+                ? 'Saved media without C2PA to Photos.'
+                : 'Saved media with C2PA to Photos.',
+          );
         } catch (saveError) {
           _showErrorToast(
             'Could not save to Photos directly, using share sheet instead: $saveError',
@@ -851,7 +855,7 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
             const Text('Select the C2PA operation to apply.'),
             if (widget.mobileNative) ...const <Widget>[
               SizedBox(height: 8),
-              Text('On iOS, the result is saved to Photos.'),
+              Text('The result is saved to the device media library.'),
             ],
             const SizedBox(height: 12),
             RadioGroup<C2paWriteMode>(

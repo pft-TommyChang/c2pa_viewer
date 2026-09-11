@@ -46,6 +46,10 @@ void main() {
         jsonDecode((await MobileC2paService.readManifestJson(replaced.path))!)
             as Map<String, dynamic>;
     expect((replacedStore['manifests'] as Map<String, dynamic>).length, 1);
+
+    final removed = File('${directory.path}/removed.png');
+    await MobileC2paService.removeC2pa(replaced.path, removed.path);
+    expect(await MobileC2paService.readManifestJson(removed.path), isNull);
   });
 
   testWidgets('native C2PA signs an MP4 video on mobile', (_) async {
@@ -67,5 +71,9 @@ void main() {
     expect(signedJson, isNotNull);
     final store = jsonDecode(signedJson!) as Map<String, dynamic>;
     expect(store['active_manifest'], isNotNull);
+
+    final removed = File('${directory.path}/removed.mp4');
+    await MobileC2paService.removeC2pa(output.path, removed.path);
+    expect(await MobileC2paService.readManifestJson(removed.path), isNull);
   });
 }

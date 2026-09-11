@@ -4,7 +4,7 @@
 
 # Perfect C2PA
 
-Perfect C2PA is a focused iOS, macOS, and Windows viewer for inspecting C2PA Content
+Perfect C2PA is a focused Android, iOS, macOS, and Windows viewer for inspecting C2PA Content
 Credentials. It shows credential status, signer and manifest information,
 provenance history, validation checks, and raw manifest JSON.
 
@@ -26,10 +26,31 @@ Run the iOS app (iOS 16 or newer):
 flutter run -d ios
 ```
 
+Run the Android app (Android API 28 or newer):
+
+```bash
+flutter run -d android
+```
+
+Android release packages must be signed with a release keystore. Copy
+`android/key.properties.example` to `android/key.properties` and fill in the
+values, or provide the equivalent `ANDROID_*` environment variables in CI.
+The keystore and properties file are intentionally ignored by Git.
+
 The iOS build uses the native
 [`c2pa-swift`](https://github.com/contentauth/c2pa-swift) package. On iOS, open
 a supported photo or video with the folder button. Signed JPEG, PNG, WebP,
 TIFF, HEIC, MP4, and MOV output is saved directly to the iOS Photos library.
+
+The Android build uses the native
+[`c2pa-android`](https://github.com/contentauth/c2pa-android) SDK. Its C2PA
+signing key is generated and kept in the Android Keystore per installation;
+the private key is not exported to Flutter. Signed media is saved to the
+device media library on Android 10+. The locally generated certificate is
+intended for device-local provenance and is not a public C2PA-trusted signer;
+production trust requires enrolling the Keystore public key with a C2PA CA.
+Android Remove C2PA uses the same behavior as iOS: images are re-encoded
+without metadata, while MP4, MOV, and HEIC C2PA boxes are removed in place.
 
 Start the viewer and drag a media file into it:
 
@@ -70,6 +91,14 @@ flutter test
 ```
 
 The generated DMG and SHA-256 file are written to `dist/`.
+
+Build a signed Android App Bundle:
+
+```bash
+./scripts/build_android_release.sh
+```
+
+The signed AAB is written to `dist/`.
 
 Create the Windows x64 ZIP bundle from a Windows development machine:
 

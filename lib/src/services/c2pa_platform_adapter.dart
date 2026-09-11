@@ -4,7 +4,7 @@ import 'mobile_c2pa_service.dart';
 /// Platform boundary for C2PA SDK operations.
 ///
 /// Desktop callers continue to use c2patool for verification and signing.
-/// Native SDK operations are currently available on iOS.
+/// Native SDK operations are available on iOS and Android.
 abstract interface class C2paPlatformAdapter {
   bool get usesNativeSdk;
 

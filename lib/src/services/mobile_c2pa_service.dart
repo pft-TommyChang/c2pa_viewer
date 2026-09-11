@@ -7,14 +7,13 @@ import 'package:path/path.dart' as p;
 /// (Android) SDKs via a Flutter MethodChannel.
 ///
 /// iOS: requires c2pa-swift added via Xcode SPM ≥ 0.0.12, iOS 16+.
-/// Android: not yet implemented (no android/ directory in this project).
+/// Android: uses the c2pa-android SDK through the same channel.
 class MobileC2paService {
   MobileC2paService._();
 
   static const _channel = MethodChannel('c2pa_native');
 
-
-  static bool get isSupportedPlatform => Platform.isIOS;
+  static bool get isSupportedPlatform => Platform.isIOS || Platform.isAndroid;
 
   // ---------------------------------------------------------------------------
   // Pick original
@@ -61,9 +60,9 @@ class MobileC2paService {
   // ---------------------------------------------------------------------------
 
   /// Sign [sourcePath] → [outputPath].
-  /// Supports images (jpeg, png, webp, tiff) and video (mp4, mov) on iOS.
+  /// Supports images (jpeg, png, webp, tiff) and video (mp4, mov) on iOS and Android.
   /// Add preserves the source as a parent ingredient. Replace starts a new
-  /// provenance chain. The native SDK does not currently expose C2PA removal.
+  /// provenance chain. Remove strips C2PA and writes a clean output file.
   static Future<void> signMedia(
     String sourcePath,
     String outputPath, {
@@ -76,7 +75,7 @@ class MobileC2paService {
     }
 
     final mimeType = _mimeType(sourcePath);
-    await _channel.invokeMethod<void>('signFile', {
+    await _channel.invokeMethod<void>('signFile', <String, Object?>{
       'sourcePath': sourcePath,
       'outputPath': outputPath,
       'mimeType': mimeType,
@@ -102,14 +101,13 @@ class MobileC2paService {
   }
 
   /// Removes all C2PA manifests from [sourcePath] and writes the stripped
-  /// file to [outputPath]. Implemented via binary box stripping for video and
-  /// CGImageSource re-encode (without metadata) for images.
-  static Future<void> removeC2pa(
-    String sourcePath,
-    String outputPath,
-  ) async {
+  /// file to [outputPath]. Video/HEIC uses box stripping; images are re-encoded
+  /// without metadata.
+  static Future<void> removeC2pa(String sourcePath, String outputPath) async {
     if (!isSupportedPlatform) {
-      throw UnsupportedError('removeC2pa is only supported on mobile platforms.');
+      throw UnsupportedError(
+        'removeC2pa is only supported on mobile platforms.',
+      );
     }
     await _channel.invokeMethod<void>('removeFile', {
       'sourcePath': sourcePath,
@@ -117,11 +115,13 @@ class MobileC2paService {
     });
   }
 
-  /// Saves the already-signed file to the iOS Photos library by file URL so
-  /// the embedded C2PA data is not lost through image re-encoding.
+  /// Saves the already-signed file to the device media library without
+  /// re-encoding, so the embedded C2PA data is preserved.
   static Future<void> saveToPhotoLibrary(String filePath) async {
-    if (!Platform.isIOS) {
-      throw UnsupportedError('Saving to Photos is only supported on iOS.');
+    if (!Platform.isIOS && !Platform.isAndroid) {
+      throw UnsupportedError(
+        'Saving to the media library is only supported on mobile.',
+      );
     }
     await _channel.invokeMethod<void>('saveToPhotoLibrary', {'path': filePath});
   }
@@ -144,7 +144,6 @@ class MobileC2paService {
       ),
     };
   }
-
 }
 
 enum C2paWriteModeNative { add, replace }

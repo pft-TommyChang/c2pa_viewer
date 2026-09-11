@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and replace every value.
+# Keep both this file and the keystore private.
+storeFile=upload-keystore.jks
+storePassword=change-me
+keyAlias=upload
+keyPassword=change-me
