@@ -3,6 +3,7 @@ import C2PA
 import Flutter
 import Photos
 import PhotosUI
+import Security
 import UIKit
 
 // C2PA native handler — registered by AppDelegate onto the Flutter engine's
@@ -20,6 +21,8 @@ import UIKit
 final class C2paNativeHandler: NSObject {
 
   static let channelName = "c2pa_native"
+  private static let signingKeyTag = "com.perfectcollage.c2pa.signing-key"
+  private static let certificateAccount = "com.perfectcollage.c2pa.certificate-chain"
 
   // Stores the pending FlutterResult while PHPickerViewController is presented.
   private var pendingPickResult: FlutterResult?
@@ -117,8 +120,6 @@ final class C2paNativeHandler: NSObject {
       let sourcePath  = args["sourcePath"]  as? String,
       let outputPath  = args["outputPath"]  as? String,
       let mimeType    = args["mimeType"]    as? String,
-      let certPem     = args["certPem"]     as? String,
-      let keyPem      = args["keyPem"]      as? String,
       let title       = args["title"]       as? String,
       let mode        = args["mode"]        as? String
     else {
@@ -148,12 +149,6 @@ final class C2paNativeHandler: NSObject {
     let manifestJSON = buildManifestJSON(title: title, mimeType: mimeType, hasThumbnail: hasThumbnail)
 
     do {
-      let signerInfo = SignerInfo(
-        algorithm: .es256,
-        certificatePEM: certPem,
-        privateKeyPEM: keyPem,
-        tsa: nil
-      )
       let source = URL(fileURLWithPath: sourcePath)
       let dest   = URL(fileURLWithPath: outputPath)
 
@@ -165,7 +160,10 @@ final class C2paNativeHandler: NSObject {
 
       let sourceStream = try Stream(readFrom: source)
       let destinationStream = try Stream(writeTo: dest)
-      let signer = try Signer(info: signerInfo)
+      // The private key never crosses the Flutter bridge.  The c2pa-swift
+      // Keychain signer asks Security.framework to perform each signature
+      // with the key stored under this application tag.
+      let signer = try Self.keychainSigner()
       let builder = try Builder(manifestJSON: manifestJSON)
       switch mode {
       case "add":
@@ -213,6 +211,97 @@ final class C2paNativeHandler: NSObject {
         )
       )
     }
+  }
+
+  private static func keychainSigner() throws -> Signer {
+    // Keep the tag representation identical to c2pa-swift's KeychainSigner.
+    let tag = signingKeyTag
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: tag,
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecReturnRef as String: true
+    ]
+
+    var item: CFTypeRef?
+    if SecItemCopyMatching(query as CFDictionary, &item) != errSecSuccess {
+      let attributes: [String: Any] = [
+        kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+        kSecAttrKeySizeInBits as String: 256,
+        kSecPrivateKeyAttrs as String: [
+          kSecAttrIsPermanent as String: true,
+          kSecAttrApplicationTag as String: tag,
+          kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+      ]
+      var error: Unmanaged<CFError>?
+      guard SecKeyCreateRandomKey(attributes as CFDictionary, &error) != nil else {
+        throw error?.takeRetainedValue() ?? NativeC2paError.keychainUnavailable
+      }
+    }
+
+    let certificate = try certificateFromKeychain() ?? createAndStoreCertificate()
+    return try Signer(
+      algorithm: .es256,
+      certificateChainPEM: certificate,
+      tsa: nil,
+      keychainKeyTag: signingKeyTag
+    )
+  }
+
+  private static func certificateFromKeychain() throws -> String? {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrAccount as String: certificateAccount,
+      kSecReturnData as String: true
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    guard status != errSecItemNotFound else { return nil }
+    guard status == errSecSuccess, let data = item as? Data,
+          let value = String(data: data, encoding: .utf8) else {
+      throw NativeC2paError.keychainUnavailable
+    }
+    return value
+  }
+
+  private static func createAndStoreCertificate() throws -> String {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: signingKeyTag,
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecReturnRef as String: true
+    ]
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+          let privateKey = item as! SecKey?,
+          let publicKey = SecKeyCopyPublicKey(privateKey) else {
+      throw NativeC2paError.keychainUnavailable
+    }
+    let config = CertificateManager.CertificateConfig(
+      commonName: "Perfect C2PA Device Signer",
+      organization: "Perfect C2PA",
+      organizationalUnit: "Device",
+      country: "TW",
+      state: "Taiwan",
+      locality: "Taipei",
+      validityDays: 3650
+    )
+    let certificate = try CertificateManager.createSelfSignedCertificateChain(
+      for: publicKey,
+      config: config
+    )
+    let saveQuery: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrAccount as String: certificateAccount,
+      kSecValueData as String: certificate.data(using: .utf8)!,
+      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    ]
+    let status = SecItemAdd(saveQuery as CFDictionary, nil)
+    guard status == errSecSuccess || status == errSecDuplicateItem else {
+      throw NativeC2paError.keychainUnavailable
+    }
+    return certificate
   }
 
   // MARK: - removeFile
@@ -1085,6 +1174,7 @@ extension C2paNativeHandler: PHPickerViewControllerDelegate {
 private enum NativeC2paError: LocalizedError {
   case unsupportedWriteMode(String)
   case removalFailed(String)
+  case keychainUnavailable
 
   var errorDescription: String? {
     switch self {
@@ -1092,6 +1182,8 @@ private enum NativeC2paError: LocalizedError {
       return "Unsupported C2PA write mode: \(mode)"
     case .removalFailed(let reason):
       return "C2PA removal failed: \(reason)"
+    case .keychainUnavailable:
+      return "C2PA signing key is unavailable in the iOS Keychain"
     }
   }
 }

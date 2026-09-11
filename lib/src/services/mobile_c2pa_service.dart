@@ -13,8 +13,6 @@ class MobileC2paService {
 
   static const _channel = MethodChannel('c2pa_native');
 
-  static const _certAsset = 'assets/c2pa/perfect_collage_cert.pem';
-  static const _keyAsset = 'assets/c2pa/perfect_collage_private_pkcs8.key';
 
   static bool get isSupportedPlatform => Platform.isIOS;
 
@@ -78,15 +76,10 @@ class MobileC2paService {
     }
 
     final mimeType = _mimeType(sourcePath);
-    final certPem = await _loadAssetString(_certAsset);
-    final keyPem = await _loadAssetString(_keyAsset);
-
     await _channel.invokeMethod<void>('signFile', {
       'sourcePath': sourcePath,
       'outputPath': outputPath,
       'mimeType': mimeType,
-      'certPem': certPem,
-      'keyPem': keyPem,
       'title': 'pcc asset',
       'mode': mode.name,
     });
@@ -152,12 +145,6 @@ class MobileC2paService {
     };
   }
 
-  static Future<String> _loadAssetString(String assetPath) async {
-    final bytes = await rootBundle.load(assetPath);
-    return String.fromCharCodes(
-      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-    );
-  }
 }
 
 enum C2paWriteModeNative { add, replace }
