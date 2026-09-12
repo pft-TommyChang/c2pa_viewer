@@ -65,6 +65,14 @@ android {
 
     buildTypes {
         release {
+            // Keep release artifacts small: R8 removes unused Java/Kotlin code and
+            // resources while the native C2PA libraries remain intact.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (releaseStoreFile != null && releaseStorePassword != null &&
                 releaseKeyAlias != null && releaseKeyPassword != null
             ) {
