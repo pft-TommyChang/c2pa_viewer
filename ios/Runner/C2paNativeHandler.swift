@@ -1,5 +1,5 @@
 import AVFoundation
-import C2PA
+import C2PAC
 import Flutter
 import Photos
 import PhotosUI
@@ -7,8 +7,8 @@ import Security
 import UIKit
 
 // C2PA native handler — registered by AppDelegate onto the Flutter engine's
-// binary messenger. Requires c2pa-swift added via Xcode > Add Package
-// Dependencies: https://github.com/contentauth/c2pa-swift.git (tag 0.0.12+)
+// binary messenger. The small Swift bridge and C library are vendored in this
+// target, so builds do not download the c2pa-swift binary package.
 //
 // Supported methods (all called on a background thread):
 //   signFile   – sign source → dest, supports images + video

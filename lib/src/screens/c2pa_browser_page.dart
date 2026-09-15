@@ -115,6 +115,9 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
   final List<String> _history = [];
   int _historyIndex = -1;
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _overviewScrollController = ScrollController();
+  final GlobalKey<_C2paHistoryTreeState> _historyTreeKey =
+      GlobalKey<_C2paHistoryTreeState>();
   final GlobalKey<_C2paTechnicalViewState> _technicalViewKey =
       GlobalKey<_C2paTechnicalViewState>();
   C2paWriteOptionsStore? _writeOptionsStore;
@@ -202,6 +205,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
+    _overviewScrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -567,6 +571,14 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
         return KeyEventResult.handled;
       }
     }
+    if (!isTextFieldFocused &&
+        (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+      final delta = event.logicalKey == LogicalKeyboardKey.arrowUp
+          ? -72.0
+          : 72.0;
+      if (_scrollActiveTabBy(delta)) return KeyEventResult.handled;
+    }
     final technicalView = _technicalViewKey.currentState;
     if (_tabController.index == 2 && technicalView != null) {
       final keyboard = HardwareKeyboard.instance;
@@ -589,6 +601,26 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
       }
     }
     return KeyEventResult.ignored;
+  }
+
+  bool _scrollActiveTabBy(double delta) {
+    switch (_tabController.index) {
+      case 0:
+        if (!_overviewScrollController.hasClients) return false;
+        final position = _overviewScrollController.position;
+        _overviewScrollController.jumpTo(
+          (_overviewScrollController.offset + delta).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          ),
+        );
+        return true;
+      case 1:
+        return _historyTreeKey.currentState?.panVerticallyBy(delta) ?? false;
+      case 2:
+        return _technicalViewKey.currentState?.scrollBy(delta) ?? false;
+    }
+    return false;
   }
 
   @override
@@ -733,8 +765,10 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                     clip: _clip,
                                     report: report,
                                     controller: _controller,
+                                    scrollController: _overviewScrollController,
                                   ),
                                   _C2paHistoryTree(
+                                    key: _historyTreeKey,
                                     clip: _clip,
                                     report: report,
                                     onZoomModeChanged: (mode) => setState(
@@ -1553,9 +1587,10 @@ class _C2paParsingView extends StatelessWidget {
 }
 
 class _C2paNoCredentialsView extends StatelessWidget {
-  const _C2paNoCredentialsView({required this.clip});
+  const _C2paNoCredentialsView({required this.clip, this.scrollController});
 
   final VideoClipInfo clip;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -1601,6 +1636,7 @@ class _C2paNoCredentialsView extends StatelessWidget {
       ),
     );
     return ListView(
+      controller: scrollController,
       padding: EdgeInsets.fromLTRB(
         18,
         _c2paSectionGap,
@@ -1734,18 +1770,23 @@ class _C2paOverview extends StatelessWidget {
     required this.clip,
     required this.report,
     this.controller,
+    this.scrollController,
   });
 
   final VideoClipInfo clip;
   final C2paReport? report;
   final VideoPlayerController? controller;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
     final report = this.report; // promote to non-nullable via flow analysis
     if (report == null) {
       return clip.aiMetadata.c2paStatus == C2paStatus.absent
-          ? _C2paNoCredentialsView(clip: clip)
+          ? _C2paNoCredentialsView(
+              clip: clip,
+              scrollController: scrollController,
+            )
           : _C2paUnavailableView(clip: clip);
     }
     final manifest = report.activeManifest;
@@ -1794,6 +1835,7 @@ class _C2paOverview extends StatelessWidget {
       shrinkWrap: isMobile,
     );
     return ListView(
+      controller: scrollController,
       padding: EdgeInsets.fromLTRB(
         18,
         _c2paSectionGap,
@@ -2880,6 +2922,7 @@ class _C2paActionTile extends StatelessWidget {
 
 class _C2paHistoryTree extends StatefulWidget {
   const _C2paHistoryTree({
+    super.key,
     required this.clip,
     required this.report,
     this.onZoomModeChanged,
@@ -3007,6 +3050,20 @@ class _C2paHistoryTreeState extends State<_C2paHistoryTree> {
   }
 
   void _resetZoom() => _transformationController.value = Matrix4.identity();
+
+  bool panVerticallyBy(double delta) {
+    if (_viewportSize == Size.zero || _treeSize == Size.zero) return false;
+    if (_zoomMode != _ZoomMode.free) {
+      setState(() => _zoomMode = _ZoomMode.free);
+      widget.onZoomModeChanged?.call(_ZoomMode.free);
+    }
+    // Translation is expressed in viewport pixels. Moving the canvas in the
+    // opposite direction makes the next portion of the history visible.
+    final transform = Matrix4.copy(_transformationController.value);
+    transform.storage[13] -= delta;
+    _transformationController.value = transform;
+    return true;
+  }
 
   void _fitToView() {
     if (_viewportSize == Size.zero || _treeSize == Size.zero) return;
@@ -3749,6 +3806,18 @@ class _C2paTechnicalViewState extends State<_C2paTechnicalView> {
   }
 
   void moveMatch(int delta) => _moveMatch(delta);
+
+  bool scrollBy(double delta) {
+    if (!_contentScrollController.hasClients) return false;
+    final position = _contentScrollController.position;
+    _contentScrollController.jumpTo(
+      (_contentScrollController.offset + delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+    return true;
+  }
 
   @override
   void dispose() {

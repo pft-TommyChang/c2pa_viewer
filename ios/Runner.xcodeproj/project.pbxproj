@@ -16,7 +16,12 @@
 		C2A100092026090300000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A100012026090300000001 /* ShareViewController.swift */; };
 		C2A1000A2026090300000001 /* SharedMediaQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A100022026090300000001 /* SharedMediaQueue.swift */; };
 		C2A000012026090200000001 /* C2paNativeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A000022026090200000001 /* C2paNativeHandler.swift */; };
-		C2A000052026090200000001 /* C2PA in Frameworks */ = {isa = PBXBuildFile; productRef = C2A000042026090200000001 /* C2PA */; };
+		C2A200032026091500000001 /* C2PALocal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A200042026091500000001 /* C2PALocal.swift */; };
+		C2A200062026091500000001 /* CertificateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A200072026091500000001 /* CertificateManager.swift */; };
+		C2A2000D2026091500000001 /* Crypto in Frameworks */ = {isa = PBXBuildFile; productRef = C2A2000C2026091500000001 /* Crypto */; };
+		C2A2000F2026091500000001 /* SwiftASN1 in Frameworks */ = {isa = PBXBuildFile; productRef = C2A2000E2026091500000001 /* SwiftASN1 */; };
+		C2A200112026091500000001 /* X509 in Frameworks */ = {isa = PBXBuildFile; productRef = C2A200102026091500000001 /* X509 */; };
+		C2A200012026091500000001 /* C2PAC.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C2A200022026091500000001 /* C2PAC.xcframework */; };
 		C2A1000C2026090300000001 /* SharedMediaQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A100052026090300000001 /* SharedMediaQueue.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -80,6 +85,9 @@
 		C2A100062026090300000001 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		C2A100072026090300000001 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2A000022026090200000001 /* C2paNativeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = C2paNativeHandler.swift; sourceTree = "<group>"; };
+		C2A200042026091500000001 /* C2PALocal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = C2PALocal.swift; sourceTree = "<group>"; };
+		C2A200072026091500000001 /* CertificateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateManager.swift; sourceTree = "<group>"; };
+		C2A200022026091500000001 /* C2PAC.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Frameworks/C2PAC.xcframework; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -99,7 +107,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C2A000052026090200000001 /* C2PA in Frameworks */,
+				C2A200012026091500000001 /* C2PAC.xcframework in Frameworks */,
+				C2A2000D2026091500000001 /* Crypto in Frameworks */,
+				C2A2000F2026091500000001 /* SwiftASN1 in Frameworks */,
+				C2A200112026091500000001 /* X509 in Frameworks */,
 				B95A9D00E17D7DB3BD03D727 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -195,6 +206,8 @@
 				C2A100182026090300000001 /* SceneDelegate.swift */,
 				C2A100062026090300000001 /* Runner.entitlements */,
 				C2A000022026090200000001 /* C2paNativeHandler.swift */,
+				C2A200042026091500000001 /* C2PALocal.swift */,
+				C2A200072026091500000001 /* CertificateManager.swift */,
 				C2A100052026090300000001 /* SharedMediaQueue.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
@@ -204,6 +217,7 @@
 		F9684F4BE5FC140D55725592 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				C2A200022026091500000001 /* C2PAC.xcframework */,
 				2F5443B40188AF1A8DA61C35 /* Pods_Runner.framework */,
 				A73E3AD40F011A7B491EDF41 /* Pods_RunnerTests.framework */,
 			);
@@ -270,7 +284,9 @@
 			);
 			name = Runner;
 			packageProductDependencies = (
-				C2A000042026090200000001 /* C2PA */,
+				C2A2000C2026091500000001 /* Crypto */,
+				C2A2000E2026091500000001 /* SwiftASN1 */,
+				C2A200102026091500000001 /* X509 */,
 			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
@@ -309,7 +325,9 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
-				C2A000032026090200000001 /* XCRemoteSwiftPackageReference "c2pa-swift" */,
+				C2A200082026091500000001 /* XCRemoteSwiftPackageReference "swift-crypto" */,
+				C2A200092026091500000001 /* XCRemoteSwiftPackageReference "swift-asn1" */,
+				C2A2000A2026091500000001 /* XCRemoteSwiftPackageReference "swift-certificates" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -486,6 +504,8 @@
 				C2A100172026090300000001 /* SceneDelegate.swift in Sources */,
 				C2A1000C2026090300000001 /* SharedMediaQueue.swift in Sources */,
 				C2A000012026090200000001 /* C2paNativeHandler.swift in Sources */,
+				C2A200032026091500000001 /* C2PALocal.swift in Sources */,
+				C2A200062026091500000001 /* CertificateManager.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -945,23 +965,29 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		C2A000032026090200000001 /* XCRemoteSwiftPackageReference "c2pa-swift" */ = {
+		C2A200082026091500000001 /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/contentauth/c2pa-swift.git";
-			requirement = {
-				kind = exactVersion;
-				version = 0.0.12;
-			};
+			repositoryURL = "https://github.com/apple/swift-crypto.git";
+			requirement = { kind = exactVersion; version = 3.15.1; };
+		};
+		C2A200092026091500000001 /* XCRemoteSwiftPackageReference "swift-asn1" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-asn1.git";
+			requirement = { kind = exactVersion; version = 1.7.2; };
+		};
+		C2A2000A2026091500000001 /* XCRemoteSwiftPackageReference "swift-certificates" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-certificates.git";
+			requirement = { kind = exactVersion; version = 1.20.0; };
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		C2A000042026090200000001 /* C2PA */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C2A000032026090200000001 /* XCRemoteSwiftPackageReference "c2pa-swift" */;
-			productName = C2PA;
-		};
+		C2A2000C2026091500000001 /* Crypto */ = { isa = XCSwiftPackageProductDependency; package = C2A200082026091500000001 /* XCRemoteSwiftPackageReference "swift-crypto" */; productName = Crypto; };
+		C2A2000E2026091500000001 /* SwiftASN1 */ = { isa = XCSwiftPackageProductDependency; package = C2A200092026091500000001 /* XCRemoteSwiftPackageReference "swift-asn1" */; productName = SwiftASN1; };
+		C2A200102026091500000001 /* X509 */ = { isa = XCSwiftPackageProductDependency; package = C2A2000A2026091500000001 /* XCRemoteSwiftPackageReference "swift-certificates" */; productName = X509; };
 /* End XCSwiftPackageProductDependency section */
+
 	};
 	rootObject = 97C146E61CF9000F007C117D /* Project object */;
 }

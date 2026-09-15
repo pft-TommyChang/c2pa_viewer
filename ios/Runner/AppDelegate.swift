@@ -89,7 +89,6 @@ import UIKit
     }
 
     // Register C2PA native channel (iOS 16+ only).
-    // Requires c2pa-swift added via Xcode > Add Package Dependencies.
     if #available(iOS 16, *) {
       guard let registrar = engineBridge.pluginRegistry.registrar(
         forPlugin: "C2paNativeHandler"

@@ -1,0 +1,42 @@
+name: Build minimal C2PA fallback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios-framework:
+    name: Build iOS XCFramework
+    runs-on: macos-latest
+    env:
+      C2PA_REF: c2pa-c-ffi-v0.85.2
+      SKIP_ANDROID: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Build ABI-compatible minimal framework
+        run: scripts/build_minimal_c2pa.sh
+
+      - name: Write checksums
+        shell: bash
+        run: |
+          cd .c2pa-minimal-build/ios
+          ditto -c -k --sequesterRsrc --keepParent C2PAC.xcframework C2PAC.xcframework.zip
+          shasum -a 256 C2PAC.xcframework.zip > C2PAC.xcframework.zip.sha256
+
+      - name: Upload fallback framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: C2PAC-xcframework-c2pa-c-ffi-0.85.2
+          path: |
+            .c2pa-minimal-build/ios/C2PAC.xcframework.zip
+            .c2pa-minimal-build/ios/C2PAC.xcframework.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
