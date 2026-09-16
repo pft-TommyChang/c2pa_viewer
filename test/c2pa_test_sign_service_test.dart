@@ -34,7 +34,7 @@ void main() {
           await File(outputPath).writeAsString('thumbnail');
           return true;
         },
-        assetLoader: (assetPath) async => assetPath.endsWith('.key')
+        materialLoader: (fileName) async => fileName.endsWith('.key')
             ? 'test private key'
             : 'test signing certificate',
         processRunner: (executable, arguments) async {
@@ -112,7 +112,7 @@ void main() {
         await File(outputPath).writeAsString('thumbnail');
         return true;
       },
-      assetLoader: (_) async => 'test key material',
+      materialLoader: (_) async => 'test key material',
       processRunner: (_, arguments) async {
         signArguments = arguments;
         final outputPath = arguments[arguments.indexOf('--output') + 1];
@@ -137,6 +137,7 @@ void main() {
     );
 
     expect(signArguments, isNot(contains('--parent')));
+    expect(signArguments, containsAllInOrder(<String>['--create', 'empty']));
     expect(await source.readAsString(), 'unsigned media');
     expect(await output.readAsString(), 'signed media');
   });
@@ -164,7 +165,7 @@ void main() {
         await File(outputPath).writeAsString('thumbnail');
         return true;
       },
-      assetLoader: (_) async => 'test key material',
+      materialLoader: (_) async => 'test key material',
       processRunner: (_, arguments) async {
         signArguments = arguments;
         signingInput = await File(arguments.first).readAsString();

@@ -391,6 +391,7 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
       builder: (_) => _C2paWriteTestDialog(
         initialOptions: initialOptions,
         onOptionsChanged: _rememberWriteOptions,
+        hasC2pa: clip.aiMetadata.hasC2pa,
         mobileNative: isMobile,
       ),
     );
@@ -844,11 +845,13 @@ class _C2paWriteTestDialog extends StatefulWidget {
   const _C2paWriteTestDialog({
     required this.initialOptions,
     required this.onOptionsChanged,
+    required this.hasC2pa,
     this.mobileNative = false,
   });
 
   final C2paWriteOptions initialOptions;
   final ValueChanged<C2paWriteOptions> onOptionsChanged;
+  final bool hasC2pa;
   final bool mobileNative;
 
   @override
@@ -862,7 +865,7 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
   @override
   void initState() {
     super.initState();
-    _mode = widget.initialOptions.mode;
+    _mode = widget.hasC2pa ? widget.initialOptions.mode : C2paWriteMode.add;
     _createNewFile = widget.initialOptions.createNewFile;
   }
 
@@ -887,47 +890,59 @@ class _C2paWriteTestDialogState extends State<_C2paWriteTestDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
-            const Text('Select the C2PA operation to apply.'),
+            Text(
+              widget.hasC2pa
+                  ? 'Select the C2PA operation to apply.'
+                  : 'Create the first C2PA claim for this media.',
+            ),
             if (widget.mobileNative) ...const <Widget>[
               SizedBox(height: 8),
               Text('The result is saved to the device media library.'),
             ],
             const SizedBox(height: 12),
-            RadioGroup<C2paWriteMode>(
-              groupValue: _mode,
-              onChanged: (value) {
-                if (value != null) _updateOptions(mode: value);
-              },
-              child: Column(
-                children: <Widget>[
-                  const RadioListTile<C2paWriteMode>(
-                    key: ValueKey<String>('c2pa-write-add'),
-                    value: C2paWriteMode.add,
-                    title: Text('Add C2PA'),
-                    subtitle: Text(
-                      'Keep existing C2PA as parent, add a new claim',
+            if (widget.hasC2pa)
+              RadioGroup<C2paWriteMode>(
+                groupValue: _mode,
+                onChanged: (value) {
+                  if (value != null) _updateOptions(mode: value);
+                },
+                child: const Column(
+                  children: <Widget>[
+                    RadioListTile<C2paWriteMode>(
+                      key: ValueKey<String>('c2pa-write-add'),
+                      value: C2paWriteMode.add,
+                      title: Text('Add C2PA'),
+                      subtitle: Text(
+                        'Keep existing C2PA as parent, add a new claim',
+                      ),
+                      contentPadding: EdgeInsets.zero,
                     ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const RadioListTile<C2paWriteMode>(
-                    key: ValueKey<String>('c2pa-write-replace'),
-                    value: C2paWriteMode.replace,
-                    title: Text('Replace C2PA'),
-                    subtitle: Text(
-                      'Discard existing C2PA, write a fresh claim',
+                    RadioListTile<C2paWriteMode>(
+                      key: ValueKey<String>('c2pa-write-replace'),
+                      value: C2paWriteMode.replace,
+                      title: Text('Replace C2PA'),
+                      subtitle: Text(
+                        'Discard existing C2PA, write a fresh claim',
+                      ),
+                      contentPadding: EdgeInsets.zero,
                     ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const RadioListTile<C2paWriteMode>(
-                    key: ValueKey<String>('c2pa-write-remove'),
-                    value: C2paWriteMode.remove,
-                    title: Text('Remove C2PA'),
-                    subtitle: Text('Strip all Content Credentials'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
+                    RadioListTile<C2paWriteMode>(
+                      key: ValueKey<String>('c2pa-write-remove'),
+                      value: C2paWriteMode.remove,
+                      title: Text('Remove C2PA'),
+                      subtitle: Text('Strip all Content Credentials'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              )
+            else
+              const ListTile(
+                key: ValueKey<String>('c2pa-write-create'),
+                title: Text('Create C2PA'),
+                subtitle: Text('Write the first Content Credentials claim'),
+                contentPadding: EdgeInsets.zero,
               ),
-            ),
             const Divider(),
             if (!widget.mobileNative)
               CheckboxListTile(

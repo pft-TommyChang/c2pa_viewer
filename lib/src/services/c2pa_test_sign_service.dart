@@ -16,7 +16,7 @@ typedef C2paSignProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> arguments);
 typedef C2paSignThumbnailGenerator =
     Future<bool> Function(String sourcePath, String outputPath);
-typedef C2paSignAssetLoader = Future<String> Function(String assetPath);
+typedef C2paSignMaterialLoader = Future<String> Function(String fileName);
 typedef C2paManifestRemover =
     Future<void> Function(String sourcePath, String outputPath);
 typedef C2paScopedFileAccess =
@@ -42,22 +42,23 @@ class C2paTestSignException implements Exception {
 /// Add mode preserves existing Content Credentials as the parent ingredient.
 /// Every mode writes through a temporary file before replacing its target.
 class C2paTestSignService {
-  static const _signingCertificateAsset =
-      'assets/c2pa/perfect_collage_cert.pem';
-  static const _signingPrivateKeyAsset =
-      'assets/c2pa/perfect_collage_private.key';
+  static const _signingCertificate = 'perfect_collage_cert.pem';
+  static const _signingPrivateKey = 'perfect_collage_private.key';
+  static const _desktopSigningChannel = MethodChannel(
+    'c2pa_viewer/media_probe',
+  );
 
   const C2paTestSignService({
     C2paSignProcessRunner? processRunner,
     C2paSignThumbnailGenerator? thumbnailGenerator,
-    C2paSignAssetLoader? assetLoader,
+    C2paSignMaterialLoader? materialLoader,
     C2paManifestRemover? manifestRemover,
     String? Function()? toolLocator,
     C2paScopedFileAccess? scopedFileAccess,
     C2paPlatformAdapter? platformAdapter,
   }) : _processRunner = processRunner ?? _runProcess,
        _thumbnailGenerator = thumbnailGenerator ?? _generateThumbnail,
-       _assetLoader = assetLoader ?? _loadAsset,
+       _materialLoader = materialLoader ?? _loadSigningMaterial,
        _manifestRemover = manifestRemover ?? MediaInspectionService.removeC2pa,
        _toolLocator = toolLocator ?? AiMetadataService.findC2paTool,
        _scopedFileAccess =
@@ -66,7 +67,7 @@ class C2paTestSignService {
 
   final C2paSignProcessRunner _processRunner;
   final C2paSignThumbnailGenerator _thumbnailGenerator;
-  final C2paSignAssetLoader _assetLoader;
+  final C2paSignMaterialLoader _materialLoader;
   final C2paManifestRemover _manifestRemover;
   final String? Function() _toolLocator;
   final C2paScopedFileAccess _scopedFileAccess;
@@ -201,10 +202,10 @@ class C2paTestSignService {
     await Future.wait(<Future<File>>[
       File(
         signingCertificatePath,
-      ).writeAsString(await _assetLoader(_signingCertificateAsset)),
+      ).writeAsString(await _materialLoader(_signingCertificate)),
       File(
         signingPrivateKeyPath,
-      ).writeAsString(await _assetLoader(_signingPrivateKeyAsset)),
+      ).writeAsString(await _materialLoader(_signingPrivateKey)),
     ]);
 
     final manifestFile = File(p.join(workDirectory.path, 'manifest.json'));
@@ -222,7 +223,8 @@ class C2paTestSignService {
       signingSource,
       '--manifest',
       manifestFile.path,
-      if (mode == C2paWriteMode.replace) ...const <String>['--create', 'empty'],
+      if (mode == C2paWriteMode.replace || !clip.aiMetadata.hasC2pa)
+        ...const <String>['--create', 'empty'],
       if (parentDirectoryPath != null) ...<String>[
         '--parent',
         parentDirectoryPath,
@@ -337,8 +339,24 @@ class C2paTestSignService {
     return true;
   }
 
-  static Future<String> _loadAsset(String assetPath) {
-    return rootBundle.loadString(assetPath);
+  static Future<String> _loadSigningMaterial(String fileName) async {
+    if (!Platform.isMacOS && !Platform.isWindows) {
+      throw UnsupportedError('Desktop signing material is unavailable.');
+    }
+    final method = switch (fileName) {
+      _signingCertificate => 'signingCertificatePath',
+      _signingPrivateKey => 'signingPrivateKeyPath',
+      _ => throw ArgumentError.value(fileName, 'fileName'),
+    };
+    final materialPath = await _desktopSigningChannel.invokeMethod<String>(
+      method,
+    );
+    if (materialPath == null || materialPath.isEmpty) {
+      throw const C2paTestSignException(
+        'The desktop C2PA signing material is unavailable.',
+      );
+    }
+    return File(materialPath).readAsString();
   }
 
   static Future<ProcessResult> _runProcess(

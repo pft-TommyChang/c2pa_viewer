@@ -48,6 +48,22 @@ bool IsPhoto(const std::wstring& path) {
          extension == L".heic" || extension == L".heif";
 }
 
+std::optional<std::wstring> SigningMaterialPath(const wchar_t* file_name) {
+  std::vector<wchar_t> executable_path(MAX_PATH);
+  const DWORD length = GetModuleFileNameW(
+      nullptr, executable_path.data(), static_cast<DWORD>(executable_path.size()));
+  if (length == 0 || length == executable_path.size()) return std::nullopt;
+  const auto key_path = std::filesystem::path(
+                            std::wstring(executable_path.data(), length))
+                            .parent_path() /
+                        file_name;
+  std::error_code file_error;
+  if (!std::filesystem::is_regular_file(key_path, file_error)) {
+    return std::nullopt;
+  }
+  return key_path.wstring();
+}
+
 uint64_t UnsignedProperty(IPropertyStore* store, REFPROPERTYKEY key) {
   PROPVARIANT value;
   PropVariantInit(&value);
@@ -223,6 +239,23 @@ bool FlutterWindow::OnCreate() {
   media_probe_channel_->SetMethodCallHandler(
       [](const flutter::MethodCall<>& call,
          std::unique_ptr<flutter::MethodResult<>> result) {
+        const wchar_t* signing_file = nullptr;
+        if (call.method_name() == "signingCertificatePath") {
+          signing_file = L"perfect_collage_cert.pem";
+        } else if (call.method_name() == "signingPrivateKeyPath") {
+          signing_file = L"perfect_collage_private.key";
+        }
+        if (signing_file != nullptr) {
+          const auto signing_path = SigningMaterialPath(signing_file);
+          if (!signing_path) {
+            result->Error("signing-key-unavailable",
+                          "C2PA signing material is missing from the app bundle.");
+          } else {
+            result->Success(
+                flutter::EncodableValue(Utf8FromUtf16(signing_path->c_str())));
+          }
+          return;
+        }
         const auto path_utf8 = GetPath(call);
         if (!path_utf8) {
           result->Error("invalid-arguments", "Expected a media file path.");

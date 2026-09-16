@@ -39,6 +39,32 @@ class AppDelegate: FlutterAppDelegate {
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
     probeChannel.setMethodCallHandler { [weak self] call, result in
+      let signingResource: (name: String, extension: String)?
+      switch call.method {
+      case "signingCertificatePath":
+        signingResource = ("perfect_collage_cert", "pem")
+      case "signingPrivateKeyPath":
+        signingResource = ("perfect_collage_private", "key")
+      default:
+        signingResource = nil
+      }
+      if let signingResource {
+        guard let resourceURL = Bundle.main.url(
+          forResource: signingResource.name,
+          withExtension: signingResource.extension
+        ) else {
+          result(
+            FlutterError(
+              code: "signing-key-unavailable",
+              message: "C2PA signing material is missing from the app bundle.",
+              details: nil
+            )
+          )
+          return
+        }
+        result(resourceURL.path)
+        return
+      }
       guard
         let arguments = call.arguments as? [String: Any],
         let path = arguments["path"] as? String

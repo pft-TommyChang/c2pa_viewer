@@ -69,7 +69,6 @@ flutter:
   assets:
     - assets/app_icon_1024.png
     - assets/app_icon_nobg.png
-    - assets/c2pa/perfect_collage_cert.pem
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

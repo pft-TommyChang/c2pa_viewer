@@ -101,17 +101,19 @@ void main() {
     );
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey<String>('c2pa-file-location')))
-          .dy -
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('c2pa-file-location')),
+              )
+              .dy -
           tester.getBottomLeft(find.byType(TabBar)).dy,
       7,
     );
     expect(
       tester
-          .getTopLeft(
-            find.byKey(const ValueKey<String>('c2pa-no-cred-preview')),
-          )
-          .dy -
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('c2pa-no-cred-preview')),
+              )
+              .dy -
           tester
               .getBottomLeft(
                 find.byKey(const ValueKey<String>('c2pa-file-location')),
@@ -163,9 +165,11 @@ void main() {
     await tester.tap(testSignButton);
     await tester.pumpAndSettle();
     expect(find.text('C2PA write test'), findsOneWidget);
-    expect(find.text('Add C2PA'), findsOneWidget);
-    expect(find.text('Replace C2PA'), findsOneWidget);
-    expect(find.text('Remove C2PA'), findsOneWidget);
+    expect(find.text('Create C2PA'), findsOneWidget);
+    expect(find.text('Add C2PA'), findsNothing);
+    expect(find.text('Replace C2PA'), findsNothing);
+    expect(find.text('Remove C2PA'), findsNothing);
+    expect(find.byType(RadioGroup<C2paWriteMode>), findsNothing);
     expect(find.text('Create new file'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey<String>('run-c2pa-write-test')));
     await tester.pumpAndSettle();
@@ -174,42 +178,48 @@ void main() {
     ]);
     expect(inspectedPaths, <String>[sourceFile.path, signedOutputPath]);
     expect(destinationPickerCalls, 1);
+  });
 
-    await tester.tap(testSignButton);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey<String>('c2pa-write-remove')));
-    await tester.tap(
-      find.byKey(const ValueKey<String>('c2pa-create-new-file')),
+  testWidgets('C2PA media offers add, replace, and remove', (
+    WidgetTester tester,
+  ) async {
+    final sourcePath = File('assets/app_icon_1024.png').absolute.path;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: C2paBrowserPage(
+          pendingPaths: <String>[sourcePath],
+          checkForUpdatesOnLaunch: false,
+          writeOptionsStore: _MemoryC2paWriteOptionsStore(
+            const C2paWriteOptions(
+              mode: C2paWriteMode.add,
+              createNewFile: true,
+            ),
+          ),
+          mediaLoader: (path) async => VideoClipInfo(
+            path: path,
+            name: 'source.png',
+            duration: Duration.zero,
+            width: 100,
+            height: 100,
+            hasAudio: false,
+            mediaKind: MediaKind.photo,
+            aiMetadata: const AiMediaMetadata(
+              c2paStatus: C2paStatus.conformant,
+            ),
+          ),
+        ),
+      ),
     );
-    await tester.tap(find.byKey(const ValueKey<String>('run-c2pa-write-test')));
     await tester.pumpAndSettle();
-    expect(signedPaths.last, 'remove: $signedOutputPath -> $signedOutputPath');
-    expect(destinationPickerCalls, 1);
-    expect(inspectedPaths.last, signedOutputPath);
-    expect(writeOptionsStore.options.mode, C2paWriteMode.remove);
-    expect(writeOptionsStore.options.createNewFile, isFalse);
-    expect(writeOptionsStore.saveCount, 2);
 
-    await tester.tap(testSignButton);
+    await tester.tap(find.byKey(const ValueKey<String>('test-sign-media')));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<RadioGroup<C2paWriteMode>>(
-            find.byType(RadioGroup<C2paWriteMode>),
-          )
-          .groupValue,
-      C2paWriteMode.remove,
-    );
-    expect(
-      tester
-          .widget<CheckboxListTile>(
-            find.byKey(const ValueKey<String>('c2pa-create-new-file')),
-          )
-          .value,
-      isFalse,
-    );
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+
+    expect(find.text('Create C2PA'), findsNothing);
+    expect(find.text('Add C2PA'), findsOneWidget);
+    expect(find.text('Replace C2PA'), findsOneWidget);
+    expect(find.text('Remove C2PA'), findsOneWidget);
+    expect(find.byType(RadioGroup<C2paWriteMode>), findsOneWidget);
   });
 
   testWidgets('fit mode updates when the history viewport is resized', (
@@ -258,8 +268,10 @@ void main() {
 
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey<String>('c2pa-history-panel')))
-          .dy -
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('c2pa-history-panel')),
+              )
+              .dy -
           tester
               .getBottomLeft(
                 find.byKey(const ValueKey<String>('c2pa-file-location')),
@@ -365,25 +377,27 @@ void main() {
       rawJson: '{}',
     );
 
-    await tester.pumpWidget(MaterialApp(
-      home: C2paBrowserPage(
-        pendingPaths: <String>[sourcePath],
-        checkForUpdatesOnLaunch: false,
-        mediaLoader: (path) async => VideoClipInfo(
-          path: path,
-          name: 'source.png',
-          duration: Duration.zero,
-          width: 100,
-          height: 100,
-          hasAudio: false,
-          mediaKind: MediaKind.photo,
-          aiMetadata: const AiMediaMetadata(
-            c2paStatus: C2paStatus.conformant,
-            c2paReport: report,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: C2paBrowserPage(
+          pendingPaths: <String>[sourcePath],
+          checkForUpdatesOnLaunch: false,
+          mediaLoader: (path) async => VideoClipInfo(
+            path: path,
+            name: 'source.png',
+            duration: Duration.zero,
+            width: 100,
+            height: 100,
+            hasAudio: false,
+            mediaKind: MediaKind.photo,
+            aiMetadata: const AiMediaMetadata(
+              c2paStatus: C2paStatus.conformant,
+              c2paReport: report,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     for (final text in <String>[
@@ -395,9 +409,15 @@ void main() {
       'Content type',
       'AI-generated',
     ]) {
-      expect(find.textContaining(text, findRichText: true), findsAtLeastNWidgets(1));
+      expect(
+        find.textContaining(text, findRichText: true),
+        findsAtLeastNWidgets(1),
+      );
     }
-    expect(find.textContaining('App or device', findRichText: true), findsNothing);
+    expect(
+      find.textContaining('App or device', findRichText: true),
+      findsNothing,
+    );
   });
 
   testWidgets('opens search with the raw JSON header in view', (tester) async {
@@ -512,15 +532,19 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    final firstMatchOffset =
-        tester.state<ScrollableState>(scrollable).position.pixels;
+    final firstMatchOffset = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
     expect(firstMatchOffset, greaterThan(headerOffset));
 
     await tester.tap(find.byTooltip('Next match'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    final secondMatchOffset =
-        tester.state<ScrollableState>(scrollable).position.pixels;
+    final secondMatchOffset = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
     expect(secondMatchOffset, greaterThan(firstMatchOffset));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
