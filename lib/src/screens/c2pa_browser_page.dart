@@ -717,7 +717,8 @@ class _C2paBrowserPageState extends State<C2paBrowserPage>
                                 ),
                                 _C2paTab(
                                   icon: Icons.account_tree_outlined,
-                                  label: 'History',
+                                  label: 'Provenance',
+                                  mobileLabel: 'C2PA',
                                 ),
                                 _C2paTab(
                                   icon: Icons.fact_check_outlined,
